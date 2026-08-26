@@ -666,7 +666,7 @@ function escHtml(str) {
 //  ATTENDANCE
 // ══════════════════════════════════════════════════════════
 
-let pendingAttendance = { checkin: null, checkout: null };
+let pendingAttendance = { checkin: null };
 
 // Called when attendance tab is shown — set labels
 function initAttendanceTab() {
@@ -711,7 +711,7 @@ async function handleAttendancePhoto(event, type) {
   reader.readAsDataURL(file);
 }
 
-// Save check-in or check-out to Firebase
+// Save check-in (photo-based)
 async function saveAttendance(type) {
   if (!pendingAttendance[type]) { showToast("Capture a photo first"); return; }
 
@@ -742,6 +742,66 @@ async function saveAttendance(type) {
   }
 }
 
+// Check Out — button only, no photo
+async function saveCheckout() {
+  const btn = document.getElementById("my-checkout-btn");
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled  = true;
+
+  const now = new Date();
+  const timeStr = now.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+
+  try {
+    await db.ref(`attendance/${todayKey}/${currentUser}/checkout`).set({
+      time:      timeStr,
+      timestamp: now.getTime(),
+      savedAt:   Date.now()
+    });
+    btn.classList.add("hidden");
+    const savedEl = document.getElementById("my-checkout-saved");
+    savedEl.classList.remove("hidden");
+    document.getElementById("my-checkout-saved-time").textContent = timeStr;
+    showToast("🔴 Checked out!");
+  } catch (err) {
+    showToast("❌ Save failed.");
+    btn.innerHTML = "🔴 Mark Check Out";
+    btn.disabled  = false;
+  }
+}
+
+// Reached Home — button only, instant notification
+async function saveReachedHome() {
+  const btn = document.getElementById("my-home-btn");
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled  = true;
+
+  const now = new Date();
+  const timeStr = now.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+
+  try {
+    await db.ref(`attendance/${todayKey}/${currentUser}/home`).set({
+      time:      timeStr,
+      timestamp: now.getTime(),
+      savedAt:   Date.now()
+    });
+    btn.classList.add("hidden");
+    const savedEl = document.getElementById("my-home-saved");
+    savedEl.classList.remove("hidden");
+    document.getElementById("my-home-saved-time").textContent = timeStr;
+    showToast("🏠 Reached home marked!");
+  } catch (err) {
+    showToast("❌ Save failed.");
+    btn.innerHTML = "🏠 I'm Home!";
+    btn.disabled  = false;
+  }
+}
+
 // Listen for attendance changes in real time
 function listenAttendance() {
   db.ref("attendance/" + todayKey).on("value", function (snap) {
@@ -752,45 +812,86 @@ function listenAttendance() {
 }
 
 function renderMyAttendance(data) {
-  for (const type of ["checkin", "checkout"]) {
-    if (data[type] && !pendingAttendance[type]) {
-      const preview = document.getElementById("my-" + type + "-preview");
-      preview.innerHTML = `<img src="${data[type].dataUrl}" alt="${type}" />`;
-      preview.classList.add("filled");
-      preview.onclick = null;
-
-      document.getElementById("my-" + type + "-meta").classList.remove("hidden");
-      document.getElementById("my-" + type + "-time").textContent = data[type].time;
-      document.getElementById("my-" + type + "-actions").classList.add("hidden");
-
-      const savedEl = document.getElementById("my-" + type + "-saved");
-      savedEl.classList.remove("hidden");
-      document.getElementById("my-" + type + "-saved-time").textContent = data[type].time;
-    }
+  // Check In (photo)
+  if (data.checkin && !pendingAttendance.checkin) {
+    const preview = document.getElementById("my-checkin-preview");
+    preview.innerHTML = `<img src="${data.checkin.dataUrl}" alt="checkin" />`;
+    preview.classList.add("filled");
+    preview.onclick = null;
+    document.getElementById("my-checkin-meta").classList.remove("hidden");
+    document.getElementById("my-checkin-time").textContent = data.checkin.time;
+    document.getElementById("my-checkin-actions").classList.add("hidden");
+    const savedEl = document.getElementById("my-checkin-saved");
+    savedEl.classList.remove("hidden");
+    document.getElementById("my-checkin-saved-time").textContent = data.checkin.time;
   }
+
+  // Check Out (button only)
+  if (data.checkout) {
+    document.getElementById("my-checkout-btn").classList.add("hidden");
+    const savedEl = document.getElementById("my-checkout-saved");
+    savedEl.classList.remove("hidden");
+    document.getElementById("my-checkout-saved-time").textContent = data.checkout.time;
+  }
+
+  // Reached Home
+  if (data.home) {
+    document.getElementById("my-home-btn").classList.add("hidden");
+    const savedEl = document.getElementById("my-home-saved");
+    savedEl.classList.remove("hidden");
+    document.getElementById("my-home-saved-time").textContent = data.home.time;
+  }
+
   updateMyDuration(data);
 }
 
 function renderTheirAttendance(data) {
-  for (const type of ["checkin", "checkout"]) {
-    const preview  = document.getElementById("their-" + type + "-preview");
-    const metaEl   = document.getElementById("their-" + type + "-meta");
-    const timeEl   = document.getElementById("their-" + type + "-time");
-    const subtitle = document.getElementById("their-" + type + "-subtitle");
+  // Their Check In (photo)
+  const preview  = document.getElementById("their-checkin-preview");
+  const metaEl   = document.getElementById("their-checkin-meta");
+  const subtitle = document.getElementById("their-checkin-subtitle");
 
-    if (data[type] && data[type].dataUrl) {
-      preview.innerHTML = `<img src="${data[type].dataUrl}" alt="${type}" />`;
-      preview.classList.add("filled");
-      metaEl.classList.remove("hidden");
-      timeEl.textContent = data[type].time;
-      if (subtitle) subtitle.textContent = type === "checkin" ? "Arrived at office" : "Left office";
-    } else {
-      preview.innerHTML = `<div class="photo-placeholder"><span>⏳</span><p>${otherUser} hasn't ${type === "checkin" ? "checked in" : "checked out"} yet</p></div>`;
-      preview.classList.remove("filled");
-      metaEl.classList.add("hidden");
-      if (subtitle) subtitle.textContent = "Waiting...";
-    }
+  if (data.checkin && data.checkin.dataUrl) {
+    preview.innerHTML = `<img src="${data.checkin.dataUrl}" alt="checkin" />`;
+    preview.classList.add("filled");
+    metaEl.classList.remove("hidden");
+    document.getElementById("their-checkin-time").textContent = data.checkin.time;
+    if (subtitle) subtitle.textContent = "Arrived at office";
+  } else {
+    preview.innerHTML = `<div class="photo-placeholder"><span>⏳</span><p>${otherUser} hasn't checked in yet</p></div>`;
+    preview.classList.remove("filled");
+    metaEl.classList.add("hidden");
+    if (subtitle) subtitle.textContent = "Waiting...";
   }
+
+  // Their Check Out (button-only — just show time)
+  const coStatus  = document.getElementById("their-checkout-status");
+  const coWaiting = document.getElementById("their-checkout-waiting");
+  if (data.checkout) {
+    coStatus.classList.remove("hidden");
+    coWaiting.classList.add("hidden");
+    document.getElementById("their-checkout-time").textContent = data.checkout.time;
+    document.getElementById("their-checkout-subtitle").textContent = "Left office";
+  } else {
+    coStatus.classList.add("hidden");
+    coWaiting.classList.remove("hidden");
+    document.getElementById("their-checkout-subtitle").textContent = "Waiting...";
+  }
+
+  // Their Reached Home
+  const homeStatus  = document.getElementById("their-home-status");
+  const homeWaiting = document.getElementById("their-home-waiting");
+  if (data.home) {
+    homeStatus.classList.remove("hidden");
+    homeWaiting.classList.add("hidden");
+    document.getElementById("their-home-time").textContent = data.home.time;
+    document.getElementById("their-home-subtitle").textContent = "Safe at home 🏠";
+  } else {
+    homeStatus.classList.add("hidden");
+    homeWaiting.classList.remove("hidden");
+    document.getElementById("their-home-subtitle").textContent = "Waiting...";
+  }
+
   updateTheirDuration(data);
 }
 

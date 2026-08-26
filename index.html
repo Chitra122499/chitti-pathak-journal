@@ -229,7 +229,7 @@
             <span class="col-badge">You</span>
           </div>
 
-          <!-- Check In -->
+          <!-- Check In (photo) -->
           <div class="card att-card">
             <div class="att-card-header">
               <span class="att-icon">🟢</span>
@@ -257,32 +257,36 @@
             </div>
           </div>
 
-          <!-- Check Out -->
+          <!-- Check Out (button only) -->
           <div class="card att-card">
             <div class="att-card-header">
               <span class="att-icon">🔴</span>
               <div>
                 <h3>Check Out</h3>
-                <p class="att-subtitle">Photo when you leave office</p>
+                <p class="att-subtitle">Tap when you leave office</p>
               </div>
             </div>
-            <div id="my-checkout-preview" class="photo-preview att-preview empty" onclick="document.getElementById('my-checkout-input').click()">
-              <div class="photo-placeholder">
-                <span>📸</span>
-                <p>Tap to capture</p>
-              </div>
-            </div>
-            <input type="file" id="my-checkout-input" accept="image/*" capture="user" style="display:none" onchange="handleAttendancePhoto(event,'checkout')" />
-            <div id="my-checkout-meta" class="att-meta hidden">
-              <span class="att-time-badge checkout" id="my-checkout-time">—</span>
-            </div>
-            <div id="my-checkout-actions" class="photo-actions hidden">
-              <button class="btn-primary att-save-btn checkout-btn" onclick="saveAttendance('checkout')">✅ Mark Check Out</button>
-            </div>
-            <div id="my-checkout-saved" class="att-saved-badge hidden">
-              <span>✅ Checked Out</span>
+            <div id="my-checkout-saved" class="att-saved-badge checkout-badge hidden">
+              <span>� Checked Out</span>
               <span id="my-checkout-saved-time" class="att-saved-time"></span>
             </div>
+            <button class="btn-primary att-save-btn checkout-btn" id="my-checkout-btn" onclick="saveCheckout()">🔴 Mark Check Out</button>
+          </div>
+
+          <!-- Reached Home (button only) -->
+          <div class="card att-card">
+            <div class="att-card-header">
+              <span class="att-icon">🏠</span>
+              <div>
+                <h3>Reached Home</h3>
+                <p class="att-subtitle">Tap once you're home safe</p>
+              </div>
+            </div>
+            <div id="my-home-saved" class="att-saved-badge home-badge hidden">
+              <span>🏠 Reached Home</span>
+              <span id="my-home-saved-time" class="att-saved-time"></span>
+            </div>
+            <button class="btn-primary att-save-btn home-btn" id="my-home-btn" onclick="saveReachedHome()">🏠 I'm Home!</button>
           </div>
 
           <!-- My Duration -->
@@ -333,15 +337,27 @@
                 <p class="att-subtitle" id="their-checkout-subtitle">Waiting...</p>
               </div>
             </div>
-            <div id="their-checkout-preview" class="photo-preview att-preview empty">
-              <div class="photo-placeholder">
-                <span>⏳</span>
-                <p id="their-checkout-wait-text">Not checked out yet</p>
+            <div id="their-checkout-status" class="att-saved-badge checkout-badge hidden">
+              <span>🔴 Checked Out</span>
+              <span id="their-checkout-time" class="att-saved-time">—</span>
+            </div>
+            <div id="their-checkout-waiting" class="att-waiting-msg">⏳ Not checked out yet</div>
+          </div>
+
+          <!-- Their Reached Home -->
+          <div class="card att-card">
+            <div class="att-card-header">
+              <span class="att-icon">🏠</span>
+              <div>
+                <h3>Reached Home</h3>
+                <p class="att-subtitle" id="their-home-subtitle">Waiting...</p>
               </div>
             </div>
-            <div id="their-checkout-meta" class="att-meta hidden">
-              <span class="att-time-badge checkout" id="their-checkout-time">—</span>
+            <div id="their-home-status" class="att-saved-badge home-badge hidden">
+              <span>🏠 Reached Home</span>
+              <span id="their-home-time" class="att-saved-time">—</span>
             </div>
+            <div id="their-home-waiting" class="att-waiting-msg">⏳ Not home yet</div>
           </div>
 
           <!-- Their Duration -->
