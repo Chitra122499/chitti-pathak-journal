@@ -3,6 +3,7 @@
 // ══════════════════════════════════════════════════════════
 
 let db;
+let storage;
 let currentUser = null;
 let otherUser   = null;
 let todayKey    = "";
@@ -38,7 +39,8 @@ function compressImage(dataUrl, maxWidth, quality) {
 window.addEventListener("load", function () {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.database();
+    db      = firebase.database();
+    storage = firebase.storage();
   } catch (e) {
     alert("Firebase init failed. Check firebase-config.js.\n\n" + e.message);
     return;
@@ -223,33 +225,54 @@ async function confirmAttendance(type) {
   if (!pending[type]) return;
 
   const btn = document.querySelector(`#my-${type}-preview-wrap .btn-primary`);
-  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.innerHTML = '<span class="spinner"></span> Uploading...';
   btn.disabled  = true;
 
   try {
+    // Convert compressed dataUrl → Blob for fast Storage upload
+    const blob      = dataUrlToBlob(pending[type].dataUrl);
+    const path      = `attendance/${todayKey}/${currentUser}/${type}.jpg`;
+    const storageRef = storage.ref(path);
+
+    // Upload blob (fast — binary, not base64 JSON)
+    await storageRef.put(blob, { contentType: "image/jpeg" });
+    const downloadURL = await storageRef.getDownloadURL();
+
+    // Save only the URL + metadata to Realtime DB (tiny, instant)
     await db.ref(`attendance/${todayKey}/${currentUser}/${type}`).set({
-      dataUrl:   pending[type].dataUrl,
+      url:       downloadURL,
+      storagePath: path,
       time:      pending[type].time,
       timestamp: pending[type].timestamp,
       savedAt:   Date.now()
     });
 
-    // Notify the other person
     await sendNotification(
       type === "checkin"
         ? `${AVATARS[currentUser]} ${currentUser} has checked in at ${pending[type].time}`
         : `${AVATARS[currentUser]} ${currentUser} has checked out at ${pending[type].time}`
     );
 
+    // Show done state using the local dataUrl (already in memory — no need to re-fetch)
     showMyAttDone(type, pending[type].dataUrl, pending[type].time);
     pending[type] = null;
     showToast(type === "checkin" ? "🟢 Checked in!" : "🔴 Checked out!");
   } catch (err) {
-    showToast("❌ Save failed. Check connection.");
+    showToast("❌ Upload failed. Check connection.");
     console.error(err);
     btn.innerHTML = type === "checkin" ? "✅ Confirm Check In" : "✅ Confirm Check Out";
     btn.disabled  = false;
   }
+}
+
+// Convert dataUrl to Blob for binary upload
+function dataUrlToBlob(dataUrl) {
+  const parts  = dataUrl.split(",");
+  const mime   = parts[0].match(/:(.*?);/)[1];
+  const binary = atob(parts[1]);
+  const arr    = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
 }
 
 function showMyAttDone(type, dataUrl, time) {
@@ -335,7 +358,9 @@ function listenAttendance() {
 function renderMyAtt(data) {
   for (const type of ["checkin", "checkout"]) {
     if (data[type] && !pending[type]) {
-      showMyAttDone(type, data[type].dataUrl, data[type].time);
+      // Use url (Storage) if available, fall back to dataUrl (legacy)
+      const imgSrc = data[type].url || data[type].dataUrl;
+      if (imgSrc) showMyAttDone(type, imgSrc, data[type].time);
     }
   }
   if (data.home) {
@@ -348,11 +373,12 @@ function renderMyAtt(data) {
 
 function renderTheirAtt(data) {
   // Check In
-  if (data.checkin && data.checkin.dataUrl) {
+  const ciSrc = data.checkin && (data.checkin.url || data.checkin.dataUrl);
+  if (ciSrc) {
     document.getElementById("their-checkin-empty").classList.add("hidden");
     const done = document.getElementById("their-checkin-done");
     done.classList.remove("hidden");
-    document.getElementById("their-checkin-done-img").src = data.checkin.dataUrl;
+    document.getElementById("their-checkin-done-img").src = ciSrc;
     document.getElementById("their-checkin-done-time").textContent = data.checkin.time;
     document.getElementById("their-checkin-hint").textContent = "Arrived at office";
   } else {
@@ -363,11 +389,12 @@ function renderTheirAtt(data) {
   }
 
   // Check Out
-  if (data.checkout && data.checkout.dataUrl) {
+  const coSrc = data.checkout && (data.checkout.url || data.checkout.dataUrl);
+  if (coSrc) {
     document.getElementById("their-checkout-empty").classList.add("hidden");
     const done = document.getElementById("their-checkout-done");
     done.classList.remove("hidden");
-    document.getElementById("their-checkout-done-img").src = data.checkout.dataUrl;
+    document.getElementById("their-checkout-done-img").src = coSrc;
     document.getElementById("their-checkout-done-time").textContent = data.checkout.time;
     document.getElementById("their-checkout-hint").textContent = "Left office";
   } else {
@@ -413,18 +440,22 @@ function formatDuration(ms) {
 
 // ── FAVOURITE ATTENDANCE PHOTOS ───────────────────────────
 async function favAttendancePhoto(type, side) {
-  const userId   = side === "my" ? currentUser : otherUser;
-  const snap     = await db.ref(`attendance/${todayKey}/${userId}/${type}`).once("value");
-  const data     = snap.val();
+  const userId = side === "my" ? currentUser : otherUser;
+  const snap   = await db.ref(`attendance/${todayKey}/${userId}/${type}`).once("value");
+  const data   = snap.val();
   if (!data) { showToast("No photo to save"); return; }
 
+  const imgUrl = data.url || data.dataUrl;
+  if (!imgUrl) { showToast("No photo to save"); return; }
+
   await db.ref(`favourites/${currentUser}/att_photos`).push({
-    from:    userId,
+    from:        userId,
     type,
-    date:    todayKey,
-    dataUrl: data.dataUrl,
-    time:    data.time,
-    savedAt: Date.now()
+    date:        todayKey,
+    url:         imgUrl,
+    storagePath: data.storagePath || null,
+    time:        data.time,
+    savedAt:     Date.now()
   });
 
   // Mark as favourited so auto-delete skips it
@@ -432,7 +463,6 @@ async function favAttendancePhoto(type, side) {
 
   const btn = document.getElementById((side === "my" ? "my" : "their") + "-" + type + "-fav-btn");
   if (btn) btn.classList.add("starred");
-
   showToast("⭐ Saved to Favourites!");
 }
 
@@ -577,13 +607,14 @@ async function loadFavourites() {
     grid.innerHTML = items.map(item => {
       if (item.kind === "att_photo") {
         const typeLabel = item.type === "checkin" ? "🟢 Check In" : "🔴 Check Out";
+        const imgUrl = item.url || item.dataUrl || "";
         return `<div class="fav-card">
-          <img src="${item.dataUrl}" loading="lazy" />
+          <img src="${imgUrl}" loading="lazy" />
           <div class="fav-card-body">
             <div class="fav-card-author">${AVATARS[item.from]||""} ${escHtml(item.from)} · ${typeLabel}</div>
             <div class="fav-card-date">${formatDisplayDate(item.date)}</div>
             ${item.time ? `<div class="fav-card-meta">🕐 ${escHtml(item.time)}</div>` : ""}
-            <a href="${item.dataUrl}" download="${escHtml(item.from)}-${item.type}-${item.date}.jpg" class="btn-text">⬇ Download</a>
+            <a href="${imgUrl}" download="${escHtml(item.from)}-${item.type}-${item.date}.jpg" class="btn-text">⬇ Download</a>
           </div></div>`;
       } else {
         return `<div class="fav-card">
