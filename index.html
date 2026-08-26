@@ -58,10 +58,7 @@
 
     <!-- Tab Bar -->
     <nav class="tab-bar">
-      <button class="tab-btn active" onclick="switchTab('today')" id="tab-today">
-        <span>📅</span> Today
-      </button>
-      <button class="tab-btn" onclick="switchTab('attendance')" id="tab-attendance">
+      <button class="tab-btn active" onclick="switchTab('attendance')" id="tab-attendance">
         <span>🏢</span> Attendance
       </button>
       <button class="tab-btn" onclick="switchTab('journal')" id="tab-journal">
@@ -71,89 +68,6 @@
         <span>❤️</span> Favourites
       </button>
     </nav>
-
-    <!-- ── TAB: TODAY ── -->
-    <div id="tab-content-today" class="tab-content active">
-      <div class="two-col">
-
-        <!-- MY SIDE -->
-        <div class="user-column" id="my-column">
-          <div class="column-header">
-            <span id="my-avatar" class="col-avatar"></span>
-            <span id="my-name" class="col-name"></span>
-            <span class="col-badge">You</span>
-          </div>
-
-          <!-- Photo Upload -->
-          <div class="card" id="my-photo-card">
-            <h3>📷 Today's Photo</h3>
-            <div id="my-photo-preview" class="photo-preview empty" onclick="document.getElementById('my-photo-input').click()">
-              <div class="photo-placeholder">
-                <span>📸</span>
-                <p>Tap to take or upload a photo</p>
-              </div>
-            </div>
-            <input type="file" id="my-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoUpload(event)" />
-            <div id="my-photo-meta" class="photo-meta hidden">
-              <div class="meta-row"><span>🕐</span><span id="my-photo-time">—</span></div>
-              <div class="meta-row"><span>📍</span><span id="my-photo-location">—</span></div>
-            </div>
-            <div id="my-photo-actions" class="photo-actions hidden">
-              <button class="btn-secondary" onclick="document.getElementById('my-photo-input').click()">Change Photo</button>
-              <button class="btn-primary" onclick="savePhoto()" id="my-save-photo-btn">Save Photo</button>
-            </div>
-            <div id="my-photo-saved" class="saved-indicator hidden">
-              <span>✅ Photo saved</span>
-              <button class="btn-text" onclick="deleteMyPhoto()">Remove</button>
-            </div>
-          </div>
-
-          <!-- Reactions on my photo -->
-          <div class="card" id="my-photo-reactions-card" style="display:none">
-            <h4>Reactions on your photo</h4>
-            <div id="my-photo-reactions" class="reactions-display"></div>
-          </div>
-        </div>
-
-        <!-- THEIR SIDE -->
-        <div class="user-column" id="their-column">
-          <div class="column-header">
-            <span id="their-avatar" class="col-avatar"></span>
-            <span id="their-name" class="col-name"></span>
-          </div>
-
-          <!-- Their Photo -->
-          <div class="card">
-            <h3>📷 Their Photo</h3>
-            <div id="their-photo-preview" class="photo-preview empty">
-              <div class="photo-placeholder">
-                <span>⏳</span>
-                <p>Waiting for their photo...</p>
-              </div>
-            </div>
-            <div id="their-photo-meta" class="photo-meta hidden">
-              <div class="meta-row"><span>🕐</span><span id="their-photo-time">—</span></div>
-              <div class="meta-row"><span>📍</span><span id="their-photo-location">—</span></div>
-            </div>
-            <div id="their-photo-react-bar" class="react-bar hidden">
-              <button class="react-btn" onclick="reactToPhoto('❤️')" title="Love">❤️</button>
-              <button class="react-btn" onclick="reactToPhoto('😍')" title="Amazing">😍</button>
-              <button class="react-btn" onclick="reactToPhoto('😊')" title="Happy">😊</button>
-              <button class="react-btn" onclick="reactToPhoto('🔥')" title="Fire">🔥</button>
-              <button class="btn-text" onclick="downloadTheirPhoto()" id="their-download-btn">⬇ Download</button>
-              <button class="btn-icon-sm" onclick="favouriteTheirPhoto()" title="Save to favourites">⭐</button>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- LOCK MESSAGE -->
-      <div id="lock-banner" class="lock-banner hidden">
-        🔒 Updates are locked. The journal closed at 2AM IST.
-        <span id="no-data-msg"></span>
-      </div>
-    </div>
 
     <!-- ── TAB: MY DAY JOURNAL ── -->
     <div id="tab-content-journal" class="tab-content">
@@ -213,7 +127,7 @@
     </div>
 
     <!-- ── TAB: ATTENDANCE ── -->
-    <div id="tab-content-attendance" class="tab-content">
+    <div id="tab-content-attendance" class="tab-content active">
       <div class="attendance-header">
         <h2>🏢 Office Attendance</h2>
         <p id="attendance-date-label"></p>

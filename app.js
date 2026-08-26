@@ -155,8 +155,9 @@ function enterApp() {
   // Lock check
   checkLockedUI();
 
-  // Listen for real-time data
-  listenToday();
+  // Attendance is the default tab — init it straight away
+  initAttendanceTab();
+  listenAttendance();
   loadFavourites();
 
   // Re-check lock every minute
