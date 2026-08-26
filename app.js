@@ -13,7 +13,28 @@ let pending = { checkin: null, checkout: null };
 
 const AVATARS = { Chitti: "🌸", Pathak: "🌿" };
 
-// ── BOOT ─────────────────────────────────────────────────
+// ── IMAGE COMPRESSION ────────────────────────────────────
+// Resizes and compresses a dataUrl to max 800px, JPEG quality 0.72
+// Reduces a 4MB phone photo to ~100-150KB — makes Firebase saves instant
+function compressImage(dataUrl, maxWidth, quality) {
+  return new Promise(function (resolve) {
+    maxWidth = maxWidth || 800;
+    quality  = quality  || 0.72;
+    const img = new Image();
+    img.onload = function () {
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      const canvas = document.createElement("canvas");
+      canvas.width  = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
+
 window.addEventListener("load", function () {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
@@ -181,8 +202,9 @@ function handleAttCapture(event, type) {
   const timeStr = nowTimeStr();
   const reader  = new FileReader();
 
-  reader.onload = function (e) {
-    const dataUrl = e.target.result;
+  reader.onload = async function (e) {
+    const compressed = await compressImage(e.target.result);
+    const dataUrl = compressed;
     pending[type] = { dataUrl, time: timeStr, timestamp: Date.now() };
 
     // Show preview
