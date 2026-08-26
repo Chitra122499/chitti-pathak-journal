@@ -1,67 +1,48 @@
 // ══════════════════════════════════════════════════════════
-//  CHITTI & PATHAK JOURNAL  —  app.js
+//  CHITTI & PATHAK JOURNAL
 // ══════════════════════════════════════════════════════════
 
-// ── GLOBALS ──────────────────────────────────────────────
 let db;
 let currentUser = null;
 let otherUser   = null;
 let todayKey    = "";
 let isLocked    = false;
 
-let myPendingPhoto = null;
+// Pending captures before save
+let pending = { checkin: null, checkout: null };
 
 const AVATARS = { Chitti: "🌸", Pathak: "🌿" };
 
-// ── START ─────────────────────────────────────────────────
+// ── BOOT ─────────────────────────────────────────────────
 window.addEventListener("load", function () {
-  // Secret URL key guard (only applies when served via http/https, not file://)
-  if (SECRET_URL_KEY && window.location.protocol !== "file:") {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("key") !== SECRET_URL_KEY) {
-      document.body.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:center;height:100vh;
-                    font-family:sans-serif;color:#888;text-align:center;padding:40px;">
-          <div>
-            <div style="font-size:64px;margin-bottom:16px;">🔒</div>
-            <h2>Private Journal</h2>
-            <p style="margin-top:8px;font-size:14px;">You need the correct link to access this journal.</p>
-          </div>
-        </div>`;
-      return;
-    }
-  }
-
-  // Init Firebase
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.database();
   } catch (e) {
-    alert("Firebase init failed. Check your firebase-config.js values.\n\n" + e.message);
+    alert("Firebase init failed. Check firebase-config.js.\n\n" + e.message);
     return;
   }
 
-  // Build toast element
+  // Toast element
   if (!document.getElementById("toast")) {
-    const toast = document.createElement("div");
-    toast.id = "toast";
-    document.body.appendChild(toast);
+    const t = document.createElement("div");
+    t.id = "toast";
+    document.body.appendChild(t);
   }
 
-  // Journal textarea char counter
-  const ta = document.getElementById("my-journal-text");
-  ta.addEventListener("input", function () {
-    const len = Math.min(ta.value.length, 1000);
-    document.getElementById("my-journal-chars").textContent = len + " / 1000";
-    if (ta.value.length > 1000) ta.value = ta.value.slice(0, 1000);
+  // Journal char counter
+  document.getElementById("my-journal-text").addEventListener("input", function () {
+    const l = Math.min(this.value.length, 1000);
+    document.getElementById("my-journal-chars").textContent = l + " / 1000";
+    if (this.value.length > 1000) this.value = this.value.slice(0, 1000);
   });
 
-  // PIN input — allow Enter key
+  // Enter on PIN
   document.getElementById("pin-input").addEventListener("keydown", function (e) {
     if (e.key === "Enter") login();
   });
 
-  // Check if already logged in
+  // Resume session
   const saved = sessionStorage.getItem("journal_user");
   if (saved && USER_CREDENTIALS[saved] !== undefined) {
     currentUser = saved;
@@ -72,26 +53,28 @@ window.addEventListener("load", function () {
 // ── DATE HELPERS ─────────────────────────────────────────
 function getNowIST() {
   const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  return new Date(utc + 5.5 * 3600 * 1000);
+  return new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 5.5 * 3600000);
 }
 
 function getJournalDayKey() {
   const ist = getNowIST();
-  // Between midnight and 2AM IST, we still show "yesterday"
   const base = ist.getHours() < 2
-    ? new Date(ist.getTime() - 24 * 3600 * 1000)
+    ? new Date(ist.getTime() - 86400000)
     : ist;
-  const y = base.getFullYear();
-  const m = String(base.getMonth() + 1).padStart(2, "0");
-  const d = String(base.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return base.toISOString().slice(0, 10);
 }
 
 function formatDisplayDate(key) {
   const [y, m, d] = key.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("en-GB", {
     weekday: "long", day: "numeric", month: "long", year: "numeric"
+  });
+}
+
+function nowTimeStr() {
+  return new Date().toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
   });
 }
 
@@ -109,16 +92,13 @@ function login() {
   const pin = document.getElementById("pin-input").value.trim();
   const err = document.getElementById("login-error");
   err.textContent = "";
-
   if (!selectedUser) { err.textContent = "Please select who you are."; return; }
   if (!pin)          { err.textContent = "Please enter your PIN."; return; }
-
   if (USER_CREDENTIALS[selectedUser] !== pin) {
     err.textContent = "Wrong PIN. Try again.";
     document.getElementById("pin-input").value = "";
     return;
   }
-
   currentUser = selectedUser;
   sessionStorage.setItem("journal_user", currentUser);
   enterApp();
@@ -134,55 +114,47 @@ function enterApp() {
   otherUser = currentUser === "Chitti" ? "Pathak" : "Chitti";
   todayKey  = getJournalDayKey();
 
-  // Switch screens
   document.getElementById("login-screen").classList.remove("active");
   document.getElementById("app-screen").classList.add("active");
 
-  // Header
   document.getElementById("header-user").textContent = AVATARS[currentUser] + " " + currentUser;
   document.getElementById("header-date").textContent  = formatDisplayDate(todayKey);
 
-  // Column names
-  document.getElementById("my-avatar").textContent          = AVATARS[currentUser];
-  document.getElementById("my-name").textContent            = currentUser;
-  document.getElementById("their-avatar").textContent       = AVATARS[otherUser];
-  document.getElementById("their-name").textContent         = otherUser;
-  document.getElementById("my-journal-avatar").textContent  = AVATARS[currentUser];
-  document.getElementById("my-journal-name").textContent    = currentUser;
+  // Journal avatars
+  document.getElementById("my-journal-avatar").textContent   = AVATARS[currentUser];
+  document.getElementById("my-journal-name").textContent     = currentUser;
   document.getElementById("their-journal-avatar").textContent = AVATARS[otherUser];
-  document.getElementById("their-journal-name").textContent  = otherUser;
+  document.getElementById("their-journal-name").textContent   = otherUser;
 
-  // Lock check
+  // Attendance col headers
+  document.getElementById("my-att-header").innerHTML =
+    `<span style="font-size:26px">${AVATARS[currentUser]}</span>
+     <span class="att-col-name">${currentUser}</span>
+     <span class="att-col-you">You</span>`;
+  document.getElementById("their-att-header").innerHTML =
+    `<span style="font-size:26px">${AVATARS[otherUser]}</span>
+     <span class="att-col-name">${otherUser}</span>`;
+
+  document.getElementById("att-date-strip").textContent = "📅 " + formatDisplayDate(todayKey);
+
   checkLockedUI();
-
-  // Attendance is the default tab — init it straight away
-  initAttendanceTab();
-  listenAttendance();
-  loadFavourites();
-
-  // Re-check lock every minute
   setInterval(checkLockedUI, 60000);
-  // Auto-delete check every minute
   setInterval(runAutoDelete, 60000);
   runAutoDelete();
+
+  // Start listening
+  listenAttendance();
+  listenJournal();
+  loadFavourites();
+
+  // Listen for notifications (their attendance updates)
+  listenNotifications();
 }
 
 // ── LOCK ─────────────────────────────────────────────────
 function checkLockedUI() {
   const h = getNowIST().getHours();
-  isLocked = h >= 0 && h < 2; // midnight to 2AM IST = locked
-
-  const banner = document.getElementById("lock-banner");
-  if (isLocked) {
-    banner.classList.remove("hidden");
-    document.getElementById("my-photo-input").disabled = true;
-    document.getElementById("my-journal-text").disabled = true;
-    document.getElementById("save-journal-btn").disabled = true;
-    const sp = document.getElementById("my-save-photo-btn");
-    if (sp) sp.disabled = true;
-  } else {
-    banner.classList.add("hidden");
-  }
+  isLocked = h >= 0 && h < 2;
 }
 
 // ── TABS ─────────────────────────────────────────────────
@@ -192,290 +164,268 @@ function switchTab(name) {
   document.getElementById("tab-" + name).classList.add("active");
   document.getElementById("tab-content-" + name).classList.add("active");
   if (name === "favourites") loadFavourites();
-  if (name === "attendance") { initAttendanceTab(); listenAttendance(); }
 }
 
-// ── PHOTO UPLOAD + EXIF ───────────────────────────────────
-async function handlePhotoUpload(event) {
+// ══════════════════════════════════════════════════════════
+//  ATTENDANCE — CAPTURE
+// ══════════════════════════════════════════════════════════
+
+function startCapture(type) {
+  document.getElementById("my-" + type + "-input").click();
+}
+
+function handleAttCapture(event, type) {
   const file = event.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = async function (e) {
+  const timeStr = nowTimeStr();
+  const reader  = new FileReader();
+
+  reader.onload = function (e) {
     const dataUrl = e.target.result;
+    pending[type] = { dataUrl, time: timeStr, timestamp: Date.now() };
 
     // Show preview
-    const preview = document.getElementById("my-photo-preview");
-    preview.innerHTML = `<img src="${dataUrl}" alt="Your photo" />`;
-    preview.classList.add("filled");
-    preview.onclick = null; // disable click-to-upload after photo chosen
+    document.getElementById("my-" + type + "-idle").classList.add("hidden");
+    document.getElementById("my-" + type + "-done").classList.add("hidden");
 
-    document.getElementById("my-photo-meta").classList.remove("hidden");
-    document.getElementById("my-photo-actions").classList.remove("hidden");
-    document.getElementById("my-photo-saved").classList.add("hidden");
-
-    let photoTime     = "";
-    let photoLocation = "Not available";
-
-    // --- EXIF extraction ---
-    try {
-      if (typeof exifr !== "undefined") {
-        const exifData = await exifr.parse(file, { tiff: true, gps: true });
-        if (exifData) {
-          if (exifData.DateTimeOriginal) {
-            photoTime = formatExifDate(exifData.DateTimeOriginal);
-          } else if (exifData.DateTime) {
-            photoTime = formatExifDate(exifData.DateTime);
-          }
-          if (exifData.latitude && exifData.longitude) {
-            document.getElementById("my-photo-location").textContent = "📍 Looking up...";
-            photoLocation = await reverseGeocode(exifData.latitude, exifData.longitude);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("EXIF parse error:", err);
-    }
-
-    // Fallback: use file last-modified date if no EXIF time
-    if (!photoTime && file.lastModified) {
-      photoTime = new Date(file.lastModified).toLocaleString("en-GB", {
-        day: "2-digit", month: "short", year: "numeric",
-        hour: "2-digit", minute: "2-digit"
-      });
-    }
-    if (!photoTime) photoTime = "Not available";
-
-    document.getElementById("my-photo-time").textContent     = photoTime;
-    document.getElementById("my-photo-location").textContent = photoLocation;
-
-    myPendingPhoto = { dataUrl, time: photoTime, location: photoLocation };
+    const wrap = document.getElementById("my-" + type + "-preview-wrap");
+    wrap.classList.remove("hidden");
+    document.getElementById("my-" + type + "-img").src = dataUrl;
+    document.getElementById("my-" + type + "-preview-time").textContent = timeStr;
   };
   reader.readAsDataURL(file);
 }
 
-function formatExifDate(d) {
-  if (d instanceof Date) {
-    return d.toLocaleString("en-GB", {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit"
-    });
-  }
-  if (typeof d === "string") {
-    // "2024:05:23 14:30:00" → ISO
-    const fixed = d.replace(/^(\d{4}):(\d{2}):(\d{2})/, "$1-$2-$3");
-    const dt = new Date(fixed);
-    if (!isNaN(dt)) {
-      return dt.toLocaleString("en-GB", {
-        day: "2-digit", month: "short", year: "numeric",
-        hour: "2-digit", minute: "2-digit"
-      });
-    }
-  }
-  return String(d);
-}
+async function confirmAttendance(type) {
+  if (!pending[type]) return;
 
-async function reverseGeocode(lat, lon) {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
-      { headers: { "Accept-Language": "en" } }
-    );
-    const data = await res.json();
-    const addr = data.address || {};
-    const city    = addr.city || addr.town || addr.village || addr.county || "";
-    const country = addr.country || "";
-    return [city, country].filter(Boolean).join(", ") || `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
-  } catch {
-    return "Location unavailable";
-  }
-}
-
-// ── SAVE PHOTO ────────────────────────────────────────────
-async function savePhoto() {
-  if (isLocked)        { showToast("🔒 Journal is locked until 2AM IST"); return; }
-  if (!myPendingPhoto) { showToast("Choose a photo first"); return; }
-
-  const btn = document.getElementById("my-save-photo-btn");
+  const btn = document.querySelector(`#my-${type}-preview-wrap .btn-primary`);
   btn.innerHTML = '<span class="spinner"></span> Saving...';
   btn.disabled  = true;
 
   try {
-    await db.ref(`journal/${todayKey}/${currentUser}/photo`).set({
-      dataUrl:   myPendingPhoto.dataUrl,
-      time:      myPendingPhoto.time,
-      location:  myPendingPhoto.location,
+    await db.ref(`attendance/${todayKey}/${currentUser}/${type}`).set({
+      dataUrl:   pending[type].dataUrl,
+      time:      pending[type].time,
+      timestamp: pending[type].timestamp,
       savedAt:   Date.now()
     });
-    document.getElementById("my-photo-actions").classList.add("hidden");
-    document.getElementById("my-photo-saved").classList.remove("hidden");
-    showToast("📷 Photo saved!");
+
+    // Notify the other person
+    await sendNotification(
+      type === "checkin"
+        ? `${AVATARS[currentUser]} ${currentUser} has checked in at ${pending[type].time}`
+        : `${AVATARS[currentUser]} ${currentUser} has checked out at ${pending[type].time}`
+    );
+
+    showMyAttDone(type, pending[type].dataUrl, pending[type].time);
+    pending[type] = null;
+    showToast(type === "checkin" ? "🟢 Checked in!" : "🔴 Checked out!");
   } catch (err) {
-    showToast("❌ Save failed. Check Firebase config.");
+    showToast("❌ Save failed. Check connection.");
     console.error(err);
-    btn.innerHTML = "Save Photo";
+    btn.innerHTML = type === "checkin" ? "✅ Confirm Check In" : "✅ Confirm Check Out";
     btn.disabled  = false;
   }
 }
 
-async function deleteMyPhoto() {
-  if (isLocked) { showToast("🔒 Journal is locked"); return; }
-  await db.ref(`journal/${todayKey}/${currentUser}/photo`).remove();
-  myPendingPhoto = null;
+function showMyAttDone(type, dataUrl, time) {
+  document.getElementById("my-" + type + "-idle").classList.add("hidden");
+  document.getElementById("my-" + type + "-preview-wrap").classList.add("hidden");
 
-  const preview = document.getElementById("my-photo-preview");
-  preview.innerHTML = `<div class="photo-placeholder"><span>📸</span><p>Tap to take or upload a photo</p></div>`;
-  preview.classList.remove("filled");
-  preview.onclick = function () { document.getElementById("my-photo-input").click(); };
-
-  document.getElementById("my-photo-meta").classList.add("hidden");
-  document.getElementById("my-photo-actions").classList.add("hidden");
-  document.getElementById("my-photo-saved").classList.add("hidden");
-  showToast("Photo removed");
+  const done = document.getElementById("my-" + type + "-done");
+  done.classList.remove("hidden");
+  document.getElementById("my-" + type + "-done-img").src = dataUrl;
+  document.getElementById("my-" + type + "-done-time").textContent = time;
 }
 
-// ── JOURNAL SAVE ─────────────────────────────────────────
-async function saveJournal() {
-  if (isLocked) { showToast("🔒 Journal is locked until 2AM IST"); return; }
-  const text = document.getElementById("my-journal-text").value.trim();
-  if (!text)  { showToast("Write something first!"); return; }
-
-  const btn = document.getElementById("save-journal-btn");
-  btn.innerHTML = '<span class="spinner"></span> Saving...';
+// ── REACHED HOME ─────────────────────────────────────────
+async function markReachedHome() {
+  const btn = document.querySelector("#my-home-idle .att-action-btn");
+  btn.innerHTML = '<span class="spinner"></span>';
   btn.disabled  = true;
 
+  const timeStr = nowTimeStr();
   try {
-    await db.ref(`journal/${todayKey}/${currentUser}/entry`).set({
-      text,
-      savedAt: Date.now()
+    await db.ref(`attendance/${todayKey}/${currentUser}/home`).set({
+      time:      timeStr,
+      timestamp: Date.now(),
+      savedAt:   Date.now()
     });
-    document.getElementById("my-journal-saved").classList.remove("hidden");
-    showToast("✍️ Entry saved!");
+
+    await sendNotification(
+      `${AVATARS[currentUser]} ${currentUser} has reached home safely at ${timeStr} 🏠`
+    );
+
+    document.getElementById("my-home-idle").classList.add("hidden");
+    const done = document.getElementById("my-home-done");
+    done.classList.remove("hidden");
+    document.getElementById("my-home-done-time").textContent = timeStr;
+    showToast("🏠 Reached home marked!");
   } catch (err) {
-    showToast("❌ Save failed. Check Firebase config.");
-    console.error(err);
-  } finally {
-    btn.innerHTML = "Save Entry";
+    showToast("❌ Save failed.");
+    btn.innerHTML = "🏠 I'm Home!";
     btn.disabled  = false;
   }
 }
 
-// ── REACTIONS ─────────────────────────────────────────────
-async function reactToPhoto(emoji) {
-  if (isLocked) { showToast("🔒 Locked"); return; }
-  await db.ref(`journal/${todayKey}/${otherUser}/photo/reactions/${currentUser}`).set(emoji);
-  // Mark the react button
-  document.querySelectorAll(".react-btn").forEach(b => {
-    if (b.textContent === emoji) b.classList.add("reacted");
+// ── NOTIFICATIONS ─────────────────────────────────────────
+async function sendNotification(message) {
+  await db.ref(`notifications/${todayKey}/${otherUser}`).push({
+    message,
+    from:   currentUser,
+    at:     Date.now(),
+    read:   false
   });
-  showToast(emoji + " Reaction sent!");
 }
 
-async function reactToJournal(emoji) {
-  if (isLocked) { showToast("🔒 Locked"); return; }
-  await db.ref(`journal/${todayKey}/${otherUser}/entry/reactions/${currentUser}`).set(emoji);
-  showToast(emoji + " Reaction sent!");
-}
+function listenNotifications() {
+  db.ref(`notifications/${todayKey}/${currentUser}`).on("child_added", function (snap) {
+    const data = snap.val();
+    if (!data || data.read) return;
 
-let replyBoxVisible = false;
-function toggleReplyBox() {
-  replyBoxVisible = !replyBoxVisible;
-  document.getElementById("their-journal-reply-box").classList.toggle("hidden", !replyBoxVisible);
-  if (replyBoxVisible) document.getElementById("their-journal-reply-input").focus();
-}
+    // Mark as read
+    snap.ref.update({ read: true });
 
-async function replyToJournal() {
-  if (isLocked) { showToast("🔒 Locked"); return; }
-  const input = document.getElementById("their-journal-reply-input");
-  const text  = input.value.trim();
-  if (!text) return;
-
-  await db.ref(`journal/${todayKey}/${otherUser}/entry/replies`).push({
-    from: currentUser,
-    text,
-    at: Date.now()
+    // Show banner
+    showNotifBanner(data.message);
   });
-  input.value = "";
-  replyBoxVisible = false;
-  document.getElementById("their-journal-reply-box").classList.add("hidden");
-  showToast("💬 Reply sent!");
 }
 
-// ── FAVOURITES (save) ─────────────────────────────────────
-async function favouriteTheirPhoto() {
-  const snap = await db.ref(`journal/${todayKey}/${otherUser}/photo`).once("value");
-  const photo = snap.val();
-  if (!photo) { showToast("No photo to save yet"); return; }
+function showNotifBanner(msg) {
+  const banner = document.getElementById("notif-banner");
+  banner.textContent = "🔔 " + msg;
+  banner.classList.remove("hidden");
+  clearTimeout(window._notifTimer);
+  window._notifTimer = setTimeout(() => banner.classList.add("hidden"), 6000);
+}
 
-  await db.ref(`favourites/${currentUser}/photos`).push({
-    from:      otherUser,
-    date:      todayKey,
-    dataUrl:   photo.dataUrl,
-    time:      photo.time,
-    location:  photo.location,
-    savedAt:   Date.now()
+// ── REAL-TIME ATTENDANCE ──────────────────────────────────
+function listenAttendance() {
+  db.ref("attendance/" + todayKey).on("value", function (snap) {
+    const data = snap.val() || {};
+    renderMyAtt(data[currentUser]  || {});
+    renderTheirAtt(data[otherUser] || {});
   });
-  showToast("⭐ Photo saved to Favourites!");
 }
 
-async function favouriteTheirJournal() {
-  const snap = await db.ref(`journal/${todayKey}/${otherUser}/entry`).once("value");
-  const entry = snap.val();
-  if (!entry) { showToast("No entry to save yet"); return; }
+function renderMyAtt(data) {
+  for (const type of ["checkin", "checkout"]) {
+    if (data[type] && !pending[type]) {
+      showMyAttDone(type, data[type].dataUrl, data[type].time);
+    }
+  }
+  if (data.home) {
+    document.getElementById("my-home-idle").classList.add("hidden");
+    document.getElementById("my-home-done").classList.remove("hidden");
+    document.getElementById("my-home-done-time").textContent = data.home.time;
+  }
+  calcDuration("my", data);
+}
 
-  await db.ref(`favourites/${currentUser}/entries`).push({
-    from:    otherUser,
+function renderTheirAtt(data) {
+  // Check In
+  if (data.checkin && data.checkin.dataUrl) {
+    document.getElementById("their-checkin-empty").classList.add("hidden");
+    const done = document.getElementById("their-checkin-done");
+    done.classList.remove("hidden");
+    document.getElementById("their-checkin-done-img").src = data.checkin.dataUrl;
+    document.getElementById("their-checkin-done-time").textContent = data.checkin.time;
+    document.getElementById("their-checkin-hint").textContent = "Arrived at office";
+  } else {
+    document.getElementById("their-checkin-empty").classList.remove("hidden");
+    document.getElementById("their-checkin-done").classList.add("hidden");
+    document.getElementById("their-checkin-hint").textContent = "Waiting...";
+    document.getElementById("their-checkin-empty-text").textContent = otherUser + " hasn't checked in yet";
+  }
+
+  // Check Out
+  if (data.checkout && data.checkout.dataUrl) {
+    document.getElementById("their-checkout-empty").classList.add("hidden");
+    const done = document.getElementById("their-checkout-done");
+    done.classList.remove("hidden");
+    document.getElementById("their-checkout-done-img").src = data.checkout.dataUrl;
+    document.getElementById("their-checkout-done-time").textContent = data.checkout.time;
+    document.getElementById("their-checkout-hint").textContent = "Left office";
+  } else {
+    document.getElementById("their-checkout-empty").classList.remove("hidden");
+    document.getElementById("their-checkout-done").classList.add("hidden");
+    document.getElementById("their-checkout-hint").textContent = "Waiting...";
+  }
+
+  // Reached Home
+  if (data.home) {
+    document.getElementById("their-home-empty").classList.add("hidden");
+    const done = document.getElementById("their-home-done");
+    done.classList.remove("hidden");
+    document.getElementById("their-home-done-time").textContent = data.home.time;
+    document.getElementById("their-home-hint").textContent = "Safe at home 🏠";
+  } else {
+    document.getElementById("their-home-empty").classList.remove("hidden");
+    document.getElementById("their-home-done").classList.add("hidden");
+    document.getElementById("their-home-hint").textContent = "Waiting...";
+  }
+
+  calcDuration("their", data);
+}
+
+function calcDuration(side, data) {
+  const card = document.getElementById(side + "-duration-card");
+  if (data.checkin && data.checkout && data.checkin.timestamp && data.checkout.timestamp) {
+    const diff = data.checkout.timestamp - data.checkin.timestamp;
+    if (diff > 0) {
+      document.getElementById(side + "-duration-value").textContent = formatDuration(diff);
+      card.classList.remove("hidden");
+      return;
+    }
+  }
+  card.classList.add("hidden");
+}
+
+function formatDuration(ms) {
+  const mins = Math.floor(ms / 60000);
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ── FAVOURITE ATTENDANCE PHOTOS ───────────────────────────
+async function favAttendancePhoto(type, side) {
+  const userId   = side === "my" ? currentUser : otherUser;
+  const snap     = await db.ref(`attendance/${todayKey}/${userId}/${type}`).once("value");
+  const data     = snap.val();
+  if (!data) { showToast("No photo to save"); return; }
+
+  await db.ref(`favourites/${currentUser}/att_photos`).push({
+    from:    userId,
+    type,
     date:    todayKey,
-    text:    entry.text,
+    dataUrl: data.dataUrl,
+    time:    data.time,
     savedAt: Date.now()
   });
-  showToast("⭐ Entry saved to Favourites!");
+
+  // Mark as favourited so auto-delete skips it
+  await db.ref(`attendance/${todayKey}/${userId}/${type}/favourited`).set(true);
+
+  const btn = document.getElementById((side === "my" ? "my" : "their") + "-" + type + "-fav-btn");
+  if (btn) btn.classList.add("starred");
+
+  showToast("⭐ Saved to Favourites!");
 }
 
-function downloadTheirPhoto() {
-  const img = document.querySelector("#their-photo-preview img");
-  if (!img) return;
-  const a    = document.createElement("a");
-  a.href     = img.src;
-  a.download = otherUser + "-photo-" + todayKey + ".jpg";
-  a.click();
-  showToast("⬇ Downloading...");
-}
-
-// ── REAL-TIME LISTENER ────────────────────────────────────
-function listenToday() {
+// ══════════════════════════════════════════════════════════
+//  JOURNAL
+// ══════════════════════════════════════════════════════════
+function listenJournal() {
   db.ref("journal/" + todayKey).on("value", function (snap) {
     const data = snap.val() || {};
-    renderMyData(data[currentUser] || {});
-    renderTheirData(data[otherUser]  || {});
+    renderMyJournal(data[currentUser]  || {});
+    renderTheirJournal(data[otherUser] || {});
   });
 }
 
-function renderMyData(data) {
-  // ── My photo (only populate from DB if nothing pending locally)
-  if (data.photo && !myPendingPhoto) {
-    const preview = document.getElementById("my-photo-preview");
-    preview.innerHTML = `<img src="${data.photo.dataUrl}" alt="Your photo" />`;
-    preview.classList.add("filled");
-    preview.onclick = null;
-    document.getElementById("my-photo-meta").classList.remove("hidden");
-    document.getElementById("my-photo-time").textContent     = data.photo.time || "—";
-    document.getElementById("my-photo-location").textContent = data.photo.location || "—";
-    document.getElementById("my-photo-actions").classList.add("hidden");
-    document.getElementById("my-photo-saved").classList.remove("hidden");
-  }
-
-  // ── Reactions on my photo
-  if (data.photo && data.photo.reactions) {
-    const card = document.getElementById("my-photo-reactions-card");
-    card.style.display = "block";
-    document.getElementById("my-photo-reactions").innerHTML =
-      Object.entries(data.photo.reactions)
-        .map(([u, e]) => `<span class="reaction-chip">${e} <b>${u}</b></span>`)
-        .join("");
-  }
-
-  // ── My journal entry
+function renderMyJournal(data) {
   if (data.entry) {
     const ta = document.getElementById("my-journal-text");
     if (!ta.value) {
@@ -485,444 +435,195 @@ function renderMyData(data) {
     }
     document.getElementById("my-journal-saved").classList.remove("hidden");
 
-    // Reactions + replies on my entry
-    const hasReactions = data.entry.reactions && Object.keys(data.entry.reactions).length > 0;
-    const hasReplies   = data.entry.replies   && Object.keys(data.entry.replies).length   > 0;
-    if (hasReactions || hasReplies) {
+    const hasR = data.entry.reactions && Object.keys(data.entry.reactions).length;
+    const hasRp = data.entry.replies   && Object.keys(data.entry.replies).length;
+    if (hasR || hasRp) {
       document.getElementById("my-journal-reactions-card").style.display = "block";
-
-      if (hasReactions) {
+      if (hasR) {
         document.getElementById("my-journal-reactions").innerHTML =
           Object.entries(data.entry.reactions)
-            .map(([u, e]) => `<span class="reaction-chip">${e} <b>${u}</b></span>`)
-            .join("");
+            .map(([u, e]) => `<span class="reaction-chip">${e} <b>${u}</b></span>`).join("");
       }
-      if (hasReplies) {
+      if (hasRp) {
         document.getElementById("my-journal-replies").innerHTML =
-          Object.values(data.entry.replies)
-            .sort((a, b) => a.at - b.at)
-            .map(r => `<div class="reply-item"><div class="reply-author">${escHtml(r.from)}</div>${escHtml(r.text)}</div>`)
-            .join("");
+          Object.values(data.entry.replies).sort((a,b) => a.at - b.at)
+            .map(r => `<div class="reply-item"><div class="reply-author">${escHtml(r.from)}</div>${escHtml(r.text)}</div>`).join("");
       }
     }
   }
 }
 
-function renderTheirData(data) {
-  // ── Their photo
-  const theirPreview = document.getElementById("their-photo-preview");
-  if (data.photo && data.photo.dataUrl) {
-    theirPreview.innerHTML = `<img src="${data.photo.dataUrl}" alt="${otherUser}'s photo" />`;
-    theirPreview.classList.add("filled");
-    document.getElementById("their-photo-meta").classList.remove("hidden");
-    document.getElementById("their-photo-time").textContent     = data.photo.time || "—";
-    document.getElementById("their-photo-location").textContent = data.photo.location || "—";
-    document.getElementById("their-photo-react-bar").classList.remove("hidden");
-  } else {
-    theirPreview.innerHTML = `<div class="photo-placeholder"><span>⏳</span><p>Waiting for ${otherUser}'s photo...</p></div>`;
-    theirPreview.classList.remove("filled");
-    document.getElementById("their-photo-meta").classList.add("hidden");
-    document.getElementById("their-photo-react-bar").classList.add("hidden");
-  }
-
-  // ── Their journal
-  const theirDiv  = document.getElementById("their-journal-text");
-  const reactBar  = document.getElementById("their-journal-react-bar");
-  const replyBtn  = document.getElementById("toggle-reply-btn");
+function renderTheirJournal(data) {
+  const div      = document.getElementById("their-journal-text");
+  const reactBar = document.getElementById("their-journal-react-bar");
+  const replyBtn = document.getElementById("toggle-reply-btn");
 
   if (data.entry && data.entry.text) {
-    theirDiv.innerHTML = escHtml(data.entry.text).replace(/\n/g, "<br>");
+    div.innerHTML = escHtml(data.entry.text).replace(/\n/g, "<br>");
     reactBar.classList.remove("hidden");
     replyBtn.style.display = "inline-block";
   } else {
-    theirDiv.innerHTML = `<p class="placeholder-text">⏳ Waiting for ${otherUser}'s entry...</p>`;
+    div.innerHTML = `<p class="placeholder-text">⏳ Waiting for ${otherUser}'s entry...</p>`;
     reactBar.classList.add("hidden");
     replyBtn.style.display = "none";
   }
 }
 
-// ── FAVOURITES TAB ────────────────────────────────────────
+async function saveJournal() {
+  if (isLocked) { showToast("🔒 Locked until 2AM IST"); return; }
+  const text = document.getElementById("my-journal-text").value.trim();
+  if (!text) { showToast("Write something first!"); return; }
+
+  const btn = document.getElementById("save-journal-btn");
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled  = true;
+
+  try {
+    await db.ref(`journal/${todayKey}/${currentUser}/entry`).set({ text, savedAt: Date.now() });
+    document.getElementById("my-journal-saved").classList.remove("hidden");
+    showToast("✍️ Entry saved!");
+  } catch (e) {
+    showToast("❌ Save failed.");
+    console.error(e);
+  } finally {
+    btn.innerHTML = "Save Entry";
+    btn.disabled  = false;
+  }
+}
+
+async function reactToJournal(emoji) {
+  await db.ref(`journal/${todayKey}/${otherUser}/entry/reactions/${currentUser}`).set(emoji);
+  showToast(emoji + " Reaction sent!");
+}
+
+let replyOpen = false;
+function toggleReplyBox() {
+  replyOpen = !replyOpen;
+  document.getElementById("their-journal-reply-box").classList.toggle("hidden", !replyOpen);
+  if (replyOpen) document.getElementById("their-journal-reply-input").focus();
+}
+
+async function replyToJournal() {
+  const input = document.getElementById("their-journal-reply-input");
+  const text  = input.value.trim();
+  if (!text) return;
+  await db.ref(`journal/${todayKey}/${otherUser}/entry/replies`).push({
+    from: currentUser, text, at: Date.now()
+  });
+  input.value = "";
+  replyOpen = false;
+  document.getElementById("their-journal-reply-box").classList.add("hidden");
+  showToast("💬 Reply sent!");
+}
+
+async function favouriteTheirJournal() {
+  const snap  = await db.ref(`journal/${todayKey}/${otherUser}/entry`).once("value");
+  const entry = snap.val();
+  if (!entry) { showToast("No entry to save yet"); return; }
+  await db.ref(`favourites/${currentUser}/entries`).push({
+    from: otherUser, date: todayKey, text: entry.text, savedAt: Date.now()
+  });
+  showToast("⭐ Entry saved to Favourites!");
+}
+
+// ══════════════════════════════════════════════════════════
+//  FAVOURITES TAB
+// ══════════════════════════════════════════════════════════
 async function loadFavourites() {
   const grid = document.getElementById("favourites-grid");
   grid.innerHTML = `<div class="empty-favourites"><span>⏳</span><p>Loading...</p></div>`;
 
   try {
-    const [pSnap, eSnap] = await Promise.all([
-      db.ref(`favourites/${currentUser}/photos`).once("value"),
+    const [apSnap, eSnap] = await Promise.all([
+      db.ref(`favourites/${currentUser}/att_photos`).once("value"),
       db.ref(`favourites/${currentUser}/entries`).once("value")
     ]);
 
-    const photos  = pSnap.val() || {};
-    const entries = eSnap.val() || {};
+    const attPhotos = apSnap.val() || {};
+    const entries   = eSnap.val()  || {};
 
     const items = [
-      ...Object.entries(photos).map(([k, v])  => ({ ...v, type: "photo", key: k })),
-      ...Object.entries(entries).map(([k, v]) => ({ ...v, type: "entry", key: k }))
+      ...Object.entries(attPhotos).map(([k,v]) => ({ ...v, kind: "att_photo", key: k })),
+      ...Object.entries(entries).map(([k,v])   => ({ ...v, kind: "entry",    key: k }))
     ].sort((a, b) => b.savedAt - a.savedAt);
 
-    if (items.length === 0) {
-      grid.innerHTML = `
-        <div class="empty-favourites">
-          <span>⭐</span>
-          <p>Nothing saved yet. Use the ⭐ button on photos or entries to keep them here.</p>
-        </div>`;
+    if (!items.length) {
+      grid.innerHTML = `<div class="empty-favourites"><span>⭐</span><p>Nothing saved yet. Use the ⭐ button on photos or entries.</p></div>`;
       return;
     }
 
     grid.innerHTML = items.map(item => {
-      if (item.type === "photo") {
-        return `
-          <div class="fav-card">
-            <img src="${item.dataUrl}" alt="Photo by ${escHtml(item.from)}" loading="lazy" />
-            <div class="fav-card-body">
-              <div class="fav-card-author">${AVATARS[item.from] || ""} ${escHtml(item.from)}</div>
-              <div class="fav-card-date">${formatDisplayDate(item.date)}</div>
-              ${item.time     ? `<div class="fav-card-meta">🕐 ${escHtml(item.time)}</div>` : ""}
-              ${item.location ? `<div class="fav-card-meta">📍 ${escHtml(item.location)}</div>` : ""}
-              <a href="${item.dataUrl}" download="${escHtml(item.from)}-${item.date}.jpg" class="btn-text">⬇ Download</a>
-            </div>
-          </div>`;
+      if (item.kind === "att_photo") {
+        const typeLabel = item.type === "checkin" ? "🟢 Check In" : "🔴 Check Out";
+        return `<div class="fav-card">
+          <img src="${item.dataUrl}" loading="lazy" />
+          <div class="fav-card-body">
+            <div class="fav-card-author">${AVATARS[item.from]||""} ${escHtml(item.from)} · ${typeLabel}</div>
+            <div class="fav-card-date">${formatDisplayDate(item.date)}</div>
+            ${item.time ? `<div class="fav-card-meta">🕐 ${escHtml(item.time)}</div>` : ""}
+            <a href="${item.dataUrl}" download="${escHtml(item.from)}-${item.type}-${item.date}.jpg" class="btn-text">⬇ Download</a>
+          </div></div>`;
       } else {
-        return `
-          <div class="fav-card">
-            <div class="fav-card-body">
-              <div class="fav-card-author">${AVATARS[item.from] || ""} ${escHtml(item.from)}</div>
-              <div class="fav-card-date">${formatDisplayDate(item.date)}</div>
-              <div class="fav-card-text">${escHtml(item.text).replace(/\n/g, "<br>")}</div>
-            </div>
-          </div>`;
+        return `<div class="fav-card">
+          <div class="fav-card-body">
+            <div class="fav-card-author">${AVATARS[item.from]||""} ${escHtml(item.from)}</div>
+            <div class="fav-card-date">${formatDisplayDate(item.date)}</div>
+            <div class="fav-card-text">${escHtml(item.text).replace(/\n/g,"<br>")}</div>
+          </div></div>`;
       }
     }).join("");
   } catch (err) {
-    grid.innerHTML = `<div class="empty-favourites"><span>❌</span><p>Error loading favourites.</p></div>`;
+    grid.innerHTML = `<div class="empty-favourites"><span>❌</span><p>Error loading.</p></div>`;
     console.error(err);
   }
 }
 
-// ── AUTO-DELETE at 2AM IST ────────────────────────────────
+// ══════════════════════════════════════════════════════════
+//  AUTO-DELETE at 2AM IST
+//  — Skips anything marked as favourited
+// ══════════════════════════════════════════════════════════
 async function runAutoDelete() {
   const ist = getNowIST();
-  // Only run in the window 02:00–02:04 IST
   if (ist.getHours() !== 2 || ist.getMinutes() > 4) return;
 
-  // Build key for the day that just ended (yesterday)
-  const prev = new Date(ist.getTime() - 24 * 3600 * 1000);
-  const y = prev.getFullYear();
-  const m = String(prev.getMonth() + 1).padStart(2, "0");
-  const d = String(prev.getDate()).padStart(2, "0");
-  const expiredKey = `${y}-${m}-${d}`;
+  const prev = new Date(ist.getTime() - 86400000);
+  const expiredKey = prev.toISOString().slice(0, 10);
 
-  // Skip if already archived
-  const archivedSnap = await db.ref(`journal/${expiredKey}/_archived`).once("value");
+  const archivedSnap = await db.ref(`attendance/${expiredKey}/_archived`).once("value");
   if (archivedSnap.val()) return;
 
-  const snap = await db.ref(`journal/${expiredKey}`).once("value");
+  const snap = await db.ref(`attendance/${expiredKey}`).once("value");
   if (!snap.exists()) {
-    // No data at all — mark "no data" notice
-    await db.ref(`journal/${expiredKey}/_noData`).set(true);
-    await db.ref(`journal/${expiredKey}/_archived`).set(true);
+    await db.ref(`attendance/${expiredKey}/_archived`).set(true);
     return;
   }
 
-  // Collect all photo keys saved in favourites so we don't double-delete
-  const [cfSnap, pfSnap] = await Promise.all([
-    db.ref("favourites/Chitti/photos").once("value"),
-    db.ref("favourites/Pathak/photos").once("value")
-  ]);
-  const savedDates = new Set();
-  [cfSnap, pfSnap].forEach(s => {
-    const v = s.val() || {};
-    Object.values(v).forEach(p => { if (p.date) savedDates.add(p.date); });
-  });
-
-  // Remove raw dataUrl for photos that weren't favourited (keeps metadata)
-  if (!savedDates.has(expiredKey)) {
-    for (const user of ["Chitti", "Pathak"]) {
-      await db.ref(`journal/${expiredKey}/${user}/photo/dataUrl`).remove();
+  const data = snap.val();
+  for (const user of ["Chitti", "Pathak"]) {
+    for (const type of ["checkin", "checkout"]) {
+      const entry = (data[user] || {})[type];
+      if (entry && entry.dataUrl && !entry.favourited) {
+        // Remove only the heavy dataUrl, keep metadata
+        await db.ref(`attendance/${expiredKey}/${user}/${type}/dataUrl`).remove();
+      }
     }
   }
 
-  await db.ref(`journal/${expiredKey}/_archived`).set(true);
+  await db.ref(`attendance/${expiredKey}/_archived`).set(true);
 }
 
 // ── UTILITIES ─────────────────────────────────────────────
 function showToast(msg) {
-  const toast = document.getElementById("toast");
-  if (!toast) return;
-  toast.textContent = msg;
-  toast.classList.add("show");
+  const t = document.getElementById("toast");
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add("show");
   clearTimeout(window._toastTimer);
-  window._toastTimer = setTimeout(() => toast.classList.remove("show"), 3000);
+  window._toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
 }
 
 function escHtml(str) {
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-// ══════════════════════════════════════════════════════════
-//  ATTENDANCE
-// ══════════════════════════════════════════════════════════
-
-let pendingAttendance = { checkin: null };
-
-// Called when attendance tab is shown — set labels
-function initAttendanceTab() {
-  document.getElementById("attendance-date-label").textContent = formatDisplayDate(todayKey);
-  document.getElementById("my-att-avatar").textContent    = AVATARS[currentUser];
-  document.getElementById("my-att-name").textContent      = currentUser;
-  document.getElementById("their-att-avatar").textContent  = AVATARS[otherUser];
-  document.getElementById("their-att-name").textContent    = otherUser;
-  document.getElementById("their-checkin-wait-text").textContent  = otherUser + " hasn't checked in yet";
-  document.getElementById("their-checkout-wait-text").textContent = otherUser + " hasn't checked out yet";
-}
-
-// Handle photo capture for checkin or checkout
-async function handleAttendancePhoto(event, type) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const dataUrl = e.target.result;
-
-    // Show preview
-    const preview = document.getElementById("my-" + type + "-preview");
-    preview.innerHTML = `<img src="${dataUrl}" alt="${type} photo" />`;
-    preview.classList.add("filled");
-    preview.onclick = null;
-
-    // Capture current time (device time — more reliable for attendance than EXIF)
-    const now = new Date();
-    const timeStr = now.toLocaleString("en-GB", {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit"
-    });
-
-    document.getElementById("my-" + type + "-meta").classList.remove("hidden");
-    document.getElementById("my-" + type + "-time").textContent = timeStr;
-    document.getElementById("my-" + type + "-actions").classList.remove("hidden");
-    document.getElementById("my-" + type + "-saved").classList.add("hidden");
-
-    pendingAttendance[type] = { dataUrl, time: timeStr, timestamp: now.getTime() };
-  };
-  reader.readAsDataURL(file);
-}
-
-// Save check-in (photo-based)
-async function saveAttendance(type) {
-  if (!pendingAttendance[type]) { showToast("Capture a photo first"); return; }
-
-  const btn = document.querySelector(`#my-${type}-actions .att-save-btn`);
-  btn.innerHTML = '<span class="spinner"></span> Saving...';
-  btn.disabled  = true;
-
-  try {
-    await db.ref(`attendance/${todayKey}/${currentUser}/${type}`).set({
-      dataUrl:   pendingAttendance[type].dataUrl,
-      time:      pendingAttendance[type].time,
-      timestamp: pendingAttendance[type].timestamp,
-      savedAt:   Date.now()
-    });
-
-    document.getElementById("my-" + type + "-actions").classList.add("hidden");
-    const savedEl = document.getElementById("my-" + type + "-saved");
-    savedEl.classList.remove("hidden");
-    document.getElementById("my-" + type + "-saved-time").textContent = pendingAttendance[type].time;
-
-    showToast(type === "checkin" ? "🟢 Checked in!" : "🔴 Checked out!");
-    pendingAttendance[type] = null;
-  } catch (err) {
-    showToast("❌ Save failed.");
-    console.error(err);
-    btn.innerHTML = type === "checkin" ? "✅ Mark Check In" : "✅ Mark Check Out";
-    btn.disabled  = false;
-  }
-}
-
-// Check Out — button only, no photo
-async function saveCheckout() {
-  const btn = document.getElementById("my-checkout-btn");
-  btn.innerHTML = '<span class="spinner"></span> Saving...';
-  btn.disabled  = true;
-
-  const now = new Date();
-  const timeStr = now.toLocaleString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", second: "2-digit"
-  });
-
-  try {
-    await db.ref(`attendance/${todayKey}/${currentUser}/checkout`).set({
-      time:      timeStr,
-      timestamp: now.getTime(),
-      savedAt:   Date.now()
-    });
-    btn.classList.add("hidden");
-    const savedEl = document.getElementById("my-checkout-saved");
-    savedEl.classList.remove("hidden");
-    document.getElementById("my-checkout-saved-time").textContent = timeStr;
-    showToast("🔴 Checked out!");
-  } catch (err) {
-    showToast("❌ Save failed.");
-    btn.innerHTML = "🔴 Mark Check Out";
-    btn.disabled  = false;
-  }
-}
-
-// Reached Home — button only, instant notification
-async function saveReachedHome() {
-  const btn = document.getElementById("my-home-btn");
-  btn.innerHTML = '<span class="spinner"></span> Saving...';
-  btn.disabled  = true;
-
-  const now = new Date();
-  const timeStr = now.toLocaleString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", second: "2-digit"
-  });
-
-  try {
-    await db.ref(`attendance/${todayKey}/${currentUser}/home`).set({
-      time:      timeStr,
-      timestamp: now.getTime(),
-      savedAt:   Date.now()
-    });
-    btn.classList.add("hidden");
-    const savedEl = document.getElementById("my-home-saved");
-    savedEl.classList.remove("hidden");
-    document.getElementById("my-home-saved-time").textContent = timeStr;
-    showToast("🏠 Reached home marked!");
-  } catch (err) {
-    showToast("❌ Save failed.");
-    btn.innerHTML = "🏠 I'm Home!";
-    btn.disabled  = false;
-  }
-}
-
-// Listen for attendance changes in real time
-function listenAttendance() {
-  db.ref("attendance/" + todayKey).on("value", function (snap) {
-    const data = snap.val() || {};
-    renderMyAttendance(data[currentUser] || {});
-    renderTheirAttendance(data[otherUser]  || {});
-  });
-}
-
-function renderMyAttendance(data) {
-  // Check In (photo)
-  if (data.checkin && !pendingAttendance.checkin) {
-    const preview = document.getElementById("my-checkin-preview");
-    preview.innerHTML = `<img src="${data.checkin.dataUrl}" alt="checkin" />`;
-    preview.classList.add("filled");
-    preview.onclick = null;
-    document.getElementById("my-checkin-meta").classList.remove("hidden");
-    document.getElementById("my-checkin-time").textContent = data.checkin.time;
-    document.getElementById("my-checkin-actions").classList.add("hidden");
-    const savedEl = document.getElementById("my-checkin-saved");
-    savedEl.classList.remove("hidden");
-    document.getElementById("my-checkin-saved-time").textContent = data.checkin.time;
-  }
-
-  // Check Out (button only)
-  if (data.checkout) {
-    document.getElementById("my-checkout-btn").classList.add("hidden");
-    const savedEl = document.getElementById("my-checkout-saved");
-    savedEl.classList.remove("hidden");
-    document.getElementById("my-checkout-saved-time").textContent = data.checkout.time;
-  }
-
-  // Reached Home
-  if (data.home) {
-    document.getElementById("my-home-btn").classList.add("hidden");
-    const savedEl = document.getElementById("my-home-saved");
-    savedEl.classList.remove("hidden");
-    document.getElementById("my-home-saved-time").textContent = data.home.time;
-  }
-
-  updateMyDuration(data);
-}
-
-function renderTheirAttendance(data) {
-  // Their Check In (photo)
-  const preview  = document.getElementById("their-checkin-preview");
-  const metaEl   = document.getElementById("their-checkin-meta");
-  const subtitle = document.getElementById("their-checkin-subtitle");
-
-  if (data.checkin && data.checkin.dataUrl) {
-    preview.innerHTML = `<img src="${data.checkin.dataUrl}" alt="checkin" />`;
-    preview.classList.add("filled");
-    metaEl.classList.remove("hidden");
-    document.getElementById("their-checkin-time").textContent = data.checkin.time;
-    if (subtitle) subtitle.textContent = "Arrived at office";
-  } else {
-    preview.innerHTML = `<div class="photo-placeholder"><span>⏳</span><p>${otherUser} hasn't checked in yet</p></div>`;
-    preview.classList.remove("filled");
-    metaEl.classList.add("hidden");
-    if (subtitle) subtitle.textContent = "Waiting...";
-  }
-
-  // Their Check Out (button-only — just show time)
-  const coStatus  = document.getElementById("their-checkout-status");
-  const coWaiting = document.getElementById("their-checkout-waiting");
-  if (data.checkout) {
-    coStatus.classList.remove("hidden");
-    coWaiting.classList.add("hidden");
-    document.getElementById("their-checkout-time").textContent = data.checkout.time;
-    document.getElementById("their-checkout-subtitle").textContent = "Left office";
-  } else {
-    coStatus.classList.add("hidden");
-    coWaiting.classList.remove("hidden");
-    document.getElementById("their-checkout-subtitle").textContent = "Waiting...";
-  }
-
-  // Their Reached Home
-  const homeStatus  = document.getElementById("their-home-status");
-  const homeWaiting = document.getElementById("their-home-waiting");
-  if (data.home) {
-    homeStatus.classList.remove("hidden");
-    homeWaiting.classList.add("hidden");
-    document.getElementById("their-home-time").textContent = data.home.time;
-    document.getElementById("their-home-subtitle").textContent = "Safe at home 🏠";
-  } else {
-    homeStatus.classList.add("hidden");
-    homeWaiting.classList.remove("hidden");
-    document.getElementById("their-home-subtitle").textContent = "Waiting...";
-  }
-
-  updateTheirDuration(data);
-}
-
-function updateMyDuration(data) {
-  const card = document.getElementById("my-duration-card");
-  if (data.checkin && data.checkout) {
-    const diff = data.checkout.timestamp - data.checkin.timestamp;
-    document.getElementById("my-duration-value").textContent = formatDuration(diff);
-    card.style.display = "block";
-  } else {
-    card.style.display = "none";
-  }
-}
-
-function updateTheirDuration(data) {
-  const card = document.getElementById("their-duration-card");
-  if (data.checkin && data.checkout) {
-    const diff = data.checkout.timestamp - data.checkin.timestamp;
-    document.getElementById("their-duration-value").textContent = formatDuration(diff);
-    card.style.display = "block";
-  } else {
-    card.style.display = "none";
-  }
-}
-
-function formatDuration(ms) {
-  if (ms <= 0) return "—";
-  const totalMins = Math.floor(ms / 60000);
-  const hrs  = Math.floor(totalMins / 60);
-  const mins = totalMins % 60;
-  if (hrs > 0) return `${hrs}h ${mins}m`;
-  return `${mins}m`;
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

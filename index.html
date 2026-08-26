@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chitti & Pathak Journal</title>
   <link rel="stylesheet" href="styles.css" />
-  <!-- EXIF reader library -->
   <script src="https://cdn.jsdelivr.net/npm/exifr/dist/lite.umd.js"></script>
-  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 </head>
@@ -18,7 +16,7 @@
     <div class="login-card">
       <div class="login-logo">📔</div>
       <h1>Our Journal</h1>
-      <p class="login-subtitle">Chitti & Pathak</p>
+      <p class="login-subtitle">Chitti &amp; Pathak</p>
       <div class="login-form">
         <label>Who are you?</label>
         <div class="user-select">
@@ -46,7 +44,7 @@
       <div class="header-left">
         <span class="header-logo">📔</span>
         <div>
-          <h2>Our Journal</h2>
+          <span class="header-title">Our Journal</span>
           <span id="header-date" class="header-date"></span>
         </div>
       </div>
@@ -56,18 +54,248 @@
       </div>
     </header>
 
+    <!-- Notification banner -->
+    <div id="notif-banner" class="notif-banner hidden"></div>
+
     <!-- Tab Bar -->
     <nav class="tab-bar">
       <button class="tab-btn active" onclick="switchTab('attendance')" id="tab-attendance">
-        <span>🏢</span> Attendance
+        🏢 Attendance
       </button>
       <button class="tab-btn" onclick="switchTab('journal')" id="tab-journal">
-        <span>✍️</span> My Day
+        ✍️ My Day
       </button>
       <button class="tab-btn" onclick="switchTab('favourites')" id="tab-favourites">
-        <span>❤️</span> Favourites
+        ❤️ Favourites
       </button>
     </nav>
+
+    <!-- ── TAB: ATTENDANCE ── -->
+    <div id="tab-content-attendance" class="tab-content active">
+      <div class="att-date-strip" id="att-date-strip"></div>
+
+      <div class="att-grid">
+
+        <!-- ── MY COLUMN ── -->
+        <div class="att-col">
+          <div class="att-col-header" id="my-att-header"></div>
+
+          <!-- CHECK IN -->
+          <div class="att-step-card" id="my-checkin-card">
+            <div class="att-step-indicator checkin-color">
+              <span class="step-dot">🟢</span>
+              <div>
+                <div class="step-title">Check In</div>
+                <div class="step-hint">Take a photo when you arrive</div>
+              </div>
+            </div>
+
+            <!-- Before capture -->
+            <div id="my-checkin-idle">
+              <button class="att-action-btn checkin-btn" onclick="startCapture('checkin')">
+                📸 Check In
+              </button>
+            </div>
+
+            <!-- Preview (after photo chosen, before save) -->
+            <div id="my-checkin-preview-wrap" class="hidden">
+              <div class="att-photo-wrap">
+                <img id="my-checkin-img" src="" alt="Check in photo" />
+                <div class="att-photo-overlay">
+                  <span id="my-checkin-preview-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-preview-actions">
+                <button class="btn-secondary btn-sm" onclick="startCapture('checkin')">Retake</button>
+                <button class="btn-primary btn-sm checkin-btn" onclick="confirmAttendance('checkin')">
+                  ✅ Confirm Check In
+                </button>
+              </div>
+            </div>
+
+            <!-- Saved state -->
+            <div id="my-checkin-done" class="att-done-state hidden">
+              <div class="att-photo-wrap">
+                <img id="my-checkin-done-img" src="" alt="Check in" />
+                <div class="att-photo-overlay">
+                  <span id="my-checkin-done-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-done-footer">
+                <span class="att-done-badge checkin-badge">✅ Checked In</span>
+                <button class="fav-btn" onclick="favAttendancePhoto('checkin','my')" title="Save to favourites" id="my-checkin-fav-btn">⭐</button>
+              </div>
+            </div>
+
+            <input type="file" id="my-checkin-input" accept="image/*" capture="user" style="display:none" onchange="handleAttCapture(event,'checkin')" />
+          </div>
+
+          <!-- CHECK OUT -->
+          <div class="att-step-card" id="my-checkout-card">
+            <div class="att-step-indicator checkout-color">
+              <span class="step-dot">🔴</span>
+              <div>
+                <div class="step-title">Check Out</div>
+                <div class="step-hint">Take a photo when you leave</div>
+              </div>
+            </div>
+
+            <div id="my-checkout-idle">
+              <button class="att-action-btn checkout-btn" onclick="startCapture('checkout')">
+                📸 Check Out
+              </button>
+            </div>
+
+            <div id="my-checkout-preview-wrap" class="hidden">
+              <div class="att-photo-wrap">
+                <img id="my-checkout-img" src="" alt="Check out photo" />
+                <div class="att-photo-overlay">
+                  <span id="my-checkout-preview-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-preview-actions">
+                <button class="btn-secondary btn-sm" onclick="startCapture('checkout')">Retake</button>
+                <button class="btn-primary btn-sm checkout-btn" onclick="confirmAttendance('checkout')">
+                  ✅ Confirm Check Out
+                </button>
+              </div>
+            </div>
+
+            <div id="my-checkout-done" class="att-done-state hidden">
+              <div class="att-photo-wrap">
+                <img id="my-checkout-done-img" src="" alt="Check out" />
+                <div class="att-photo-overlay">
+                  <span id="my-checkout-done-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-done-footer">
+                <span class="att-done-badge checkout-badge">✅ Checked Out</span>
+                <button class="fav-btn" onclick="favAttendancePhoto('checkout','my')" title="Save to favourites" id="my-checkout-fav-btn">⭐</button>
+              </div>
+            </div>
+
+            <input type="file" id="my-checkout-input" accept="image/*" capture="user" style="display:none" onchange="handleAttCapture(event,'checkout')" />
+          </div>
+
+          <!-- REACHED HOME -->
+          <div class="att-step-card" id="my-home-card">
+            <div class="att-step-indicator home-color">
+              <span class="step-dot">🏠</span>
+              <div>
+                <div class="step-title">Reached Home</div>
+                <div class="step-hint">Let them know you're safe</div>
+              </div>
+            </div>
+            <div id="my-home-idle">
+              <button class="att-action-btn home-btn" onclick="markReachedHome()">
+                🏠 I'm Home!
+              </button>
+            </div>
+            <div id="my-home-done" class="att-done-state hidden">
+              <div class="att-done-badge home-badge">🏠 Reached Home Safely</div>
+              <div id="my-home-done-time" class="att-home-time"></div>
+            </div>
+          </div>
+
+          <!-- DURATION -->
+          <div class="att-duration-card hidden" id="my-duration-card">
+            <span class="duration-icon">⏱</span>
+            <div>
+              <div class="duration-label">Time at Office</div>
+              <div class="duration-value" id="my-duration-value">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── THEIR COLUMN ── -->
+        <div class="att-col">
+          <div class="att-col-header" id="their-att-header"></div>
+
+          <!-- THEIR CHECK IN -->
+          <div class="att-step-card">
+            <div class="att-step-indicator checkin-color">
+              <span class="step-dot">🟢</span>
+              <div>
+                <div class="step-title">Check In</div>
+                <div class="step-hint" id="their-checkin-hint">Waiting...</div>
+              </div>
+            </div>
+            <div id="their-checkin-empty" class="att-waiting">
+              <span class="waiting-icon">⏳</span>
+              <span id="their-checkin-empty-text">Not checked in yet</span>
+            </div>
+            <div id="their-checkin-done" class="att-done-state hidden">
+              <div class="att-photo-wrap">
+                <img id="their-checkin-done-img" src="" alt="Their check in" />
+                <div class="att-photo-overlay">
+                  <span id="their-checkin-done-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-done-footer">
+                <span class="att-done-badge checkin-badge">✅ Checked In</span>
+                <button class="fav-btn" onclick="favAttendancePhoto('checkin','their')" title="Save to favourites" id="their-checkin-fav-btn">⭐</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- THEIR CHECK OUT -->
+          <div class="att-step-card">
+            <div class="att-step-indicator checkout-color">
+              <span class="step-dot">🔴</span>
+              <div>
+                <div class="step-title">Check Out</div>
+                <div class="step-hint" id="their-checkout-hint">Waiting...</div>
+              </div>
+            </div>
+            <div id="their-checkout-empty" class="att-waiting">
+              <span class="waiting-icon">⏳</span>
+              <span>Not checked out yet</span>
+            </div>
+            <div id="their-checkout-done" class="att-done-state hidden">
+              <div class="att-photo-wrap">
+                <img id="their-checkout-done-img" src="" alt="Their check out" />
+                <div class="att-photo-overlay">
+                  <span id="their-checkout-done-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-done-footer">
+                <span class="att-done-badge checkout-badge">✅ Checked Out</span>
+                <button class="fav-btn" onclick="favAttendancePhoto('checkout','their')" title="Save to favourites" id="their-checkout-fav-btn">⭐</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- THEIR REACHED HOME -->
+          <div class="att-step-card">
+            <div class="att-step-indicator home-color">
+              <span class="step-dot">🏠</span>
+              <div>
+                <div class="step-title">Reached Home</div>
+                <div class="step-hint" id="their-home-hint">Waiting...</div>
+              </div>
+            </div>
+            <div id="their-home-empty" class="att-waiting">
+              <span class="waiting-icon">⏳</span>
+              <span>Not home yet</span>
+            </div>
+            <div id="their-home-done" class="att-done-state hidden">
+              <div class="att-done-badge home-badge">🏠 Reached Home Safely</div>
+              <div id="their-home-done-time" class="att-home-time"></div>
+            </div>
+          </div>
+
+          <!-- THEIR DURATION -->
+          <div class="att-duration-card hidden" id="their-duration-card">
+            <span class="duration-icon">⏱</span>
+            <div>
+              <div class="duration-label">Time at Office</div>
+              <div class="duration-value" id="their-duration-value">—</div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- end att-grid -->
+    </div><!-- end attendance tab -->
 
     <!-- ── TAB: MY DAY JOURNAL ── -->
     <div id="tab-content-journal" class="tab-content">
@@ -89,7 +317,6 @@
             </div>
             <div id="my-journal-saved" class="saved-indicator hidden">✅ Entry saved</div>
           </div>
-          <!-- Reactions on my journal -->
           <div class="card" id="my-journal-reactions-card" style="display:none">
             <h4>Reactions on your entry</h4>
             <div id="my-journal-reactions" class="reactions-display"></div>
@@ -126,179 +353,16 @@
       </div>
     </div>
 
-    <!-- ── TAB: ATTENDANCE ── -->
-    <div id="tab-content-attendance" class="tab-content active">
-      <div class="attendance-header">
-        <h2>🏢 Office Attendance</h2>
-        <p id="attendance-date-label"></p>
-      </div>
-
-      <div class="two-col">
-
-        <!-- MY ATTENDANCE -->
-        <div class="user-column">
-          <div class="column-header">
-            <span id="my-att-avatar" class="col-avatar"></span>
-            <span id="my-att-name" class="col-name"></span>
-            <span class="col-badge">You</span>
-          </div>
-
-          <!-- Check In (photo) -->
-          <div class="card att-card">
-            <div class="att-card-header">
-              <span class="att-icon">🟢</span>
-              <div>
-                <h3>Check In</h3>
-                <p class="att-subtitle">Photo when you arrive at office</p>
-              </div>
-            </div>
-            <div id="my-checkin-preview" class="photo-preview att-preview empty" onclick="document.getElementById('my-checkin-input').click()">
-              <div class="photo-placeholder">
-                <span>📸</span>
-                <p>Tap to capture</p>
-              </div>
-            </div>
-            <input type="file" id="my-checkin-input" accept="image/*" capture="user" style="display:none" onchange="handleAttendancePhoto(event,'checkin')" />
-            <div id="my-checkin-meta" class="att-meta hidden">
-              <span class="att-time-badge" id="my-checkin-time">—</span>
-            </div>
-            <div id="my-checkin-actions" class="photo-actions hidden">
-              <button class="btn-primary att-save-btn" onclick="saveAttendance('checkin')">✅ Mark Check In</button>
-            </div>
-            <div id="my-checkin-saved" class="att-saved-badge hidden">
-              <span>✅ Checked In</span>
-              <span id="my-checkin-saved-time" class="att-saved-time"></span>
-            </div>
-          </div>
-
-          <!-- Check Out (button only) -->
-          <div class="card att-card">
-            <div class="att-card-header">
-              <span class="att-icon">🔴</span>
-              <div>
-                <h3>Check Out</h3>
-                <p class="att-subtitle">Tap when you leave office</p>
-              </div>
-            </div>
-            <div id="my-checkout-saved" class="att-saved-badge checkout-badge hidden">
-              <span>� Checked Out</span>
-              <span id="my-checkout-saved-time" class="att-saved-time"></span>
-            </div>
-            <button class="btn-primary att-save-btn checkout-btn" id="my-checkout-btn" onclick="saveCheckout()">🔴 Mark Check Out</button>
-          </div>
-
-          <!-- Reached Home (button only) -->
-          <div class="card att-card">
-            <div class="att-card-header">
-              <span class="att-icon">🏠</span>
-              <div>
-                <h3>Reached Home</h3>
-                <p class="att-subtitle">Tap once you're home safe</p>
-              </div>
-            </div>
-            <div id="my-home-saved" class="att-saved-badge home-badge hidden">
-              <span>🏠 Reached Home</span>
-              <span id="my-home-saved-time" class="att-saved-time"></span>
-            </div>
-            <button class="btn-primary att-save-btn home-btn" id="my-home-btn" onclick="saveReachedHome()">🏠 I'm Home!</button>
-          </div>
-
-          <!-- My Duration -->
-          <div class="card" id="my-duration-card" style="display:none">
-            <div class="duration-display">
-              <span class="duration-icon">⏱</span>
-              <div>
-                <div class="duration-label">Time at Office</div>
-                <div class="duration-value" id="my-duration-value">—</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- THEIR ATTENDANCE -->
-        <div class="user-column">
-          <div class="column-header">
-            <span id="their-att-avatar" class="col-avatar"></span>
-            <span id="their-att-name" class="col-name"></span>
-          </div>
-
-          <!-- Their Check In -->
-          <div class="card att-card">
-            <div class="att-card-header">
-              <span class="att-icon">🟢</span>
-              <div>
-                <h3>Check In</h3>
-                <p class="att-subtitle" id="their-checkin-subtitle">Waiting...</p>
-              </div>
-            </div>
-            <div id="their-checkin-preview" class="photo-preview att-preview empty">
-              <div class="photo-placeholder">
-                <span>⏳</span>
-                <p id="their-checkin-wait-text">Not checked in yet</p>
-              </div>
-            </div>
-            <div id="their-checkin-meta" class="att-meta hidden">
-              <span class="att-time-badge" id="their-checkin-time">—</span>
-            </div>
-          </div>
-
-          <!-- Their Check Out -->
-          <div class="card att-card">
-            <div class="att-card-header">
-              <span class="att-icon">🔴</span>
-              <div>
-                <h3>Check Out</h3>
-                <p class="att-subtitle" id="their-checkout-subtitle">Waiting...</p>
-              </div>
-            </div>
-            <div id="their-checkout-status" class="att-saved-badge checkout-badge hidden">
-              <span>🔴 Checked Out</span>
-              <span id="their-checkout-time" class="att-saved-time">—</span>
-            </div>
-            <div id="their-checkout-waiting" class="att-waiting-msg">⏳ Not checked out yet</div>
-          </div>
-
-          <!-- Their Reached Home -->
-          <div class="card att-card">
-            <div class="att-card-header">
-              <span class="att-icon">🏠</span>
-              <div>
-                <h3>Reached Home</h3>
-                <p class="att-subtitle" id="their-home-subtitle">Waiting...</p>
-              </div>
-            </div>
-            <div id="their-home-status" class="att-saved-badge home-badge hidden">
-              <span>🏠 Reached Home</span>
-              <span id="their-home-time" class="att-saved-time">—</span>
-            </div>
-            <div id="their-home-waiting" class="att-waiting-msg">⏳ Not home yet</div>
-          </div>
-
-          <!-- Their Duration -->
-          <div class="card" id="their-duration-card" style="display:none">
-            <div class="duration-display">
-              <span class="duration-icon">⏱</span>
-              <div>
-                <div class="duration-label">Time at Office</div>
-                <div class="duration-value" id="their-duration-value">—</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
     <!-- ── TAB: FAVOURITES ── -->
     <div id="tab-content-favourites" class="tab-content">
       <div class="favourites-header">
         <h2>❤️ Saved Favourites</h2>
-        <p>Photos and entries you've liked — kept forever</p>
+        <p>Photos and entries you've starred — kept forever</p>
       </div>
       <div id="favourites-grid" class="favourites-grid">
         <div class="empty-favourites">
           <span>⭐</span>
-          <p>Nothing saved yet. Star photos or journal entries to keep them here.</p>
+          <p>Nothing saved yet. Use the ⭐ button on photos or entries.</p>
         </div>
       </div>
     </div>
