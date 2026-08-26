@@ -61,6 +61,9 @@
       <button class="tab-btn active" onclick="switchTab('today')" id="tab-today">
         <span>📅</span> Today
       </button>
+      <button class="tab-btn" onclick="switchTab('attendance')" id="tab-attendance">
+        <span>🏢</span> Attendance
+      </button>
       <button class="tab-btn" onclick="switchTab('journal')" id="tab-journal">
         <span>✍️</span> My Day
       </button>
@@ -203,6 +206,153 @@
               <button class="btn-primary btn-sm" onclick="replyToJournal()">Send</button>
             </div>
             <button class="btn-text" id="toggle-reply-btn" style="display:none" onclick="toggleReplyBox()">💬 Reply</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── TAB: ATTENDANCE ── -->
+    <div id="tab-content-attendance" class="tab-content">
+      <div class="attendance-header">
+        <h2>🏢 Office Attendance</h2>
+        <p id="attendance-date-label"></p>
+      </div>
+
+      <div class="two-col">
+
+        <!-- MY ATTENDANCE -->
+        <div class="user-column">
+          <div class="column-header">
+            <span id="my-att-avatar" class="col-avatar"></span>
+            <span id="my-att-name" class="col-name"></span>
+            <span class="col-badge">You</span>
+          </div>
+
+          <!-- Check In -->
+          <div class="card att-card">
+            <div class="att-card-header">
+              <span class="att-icon">🟢</span>
+              <div>
+                <h3>Check In</h3>
+                <p class="att-subtitle">Photo when you arrive at office</p>
+              </div>
+            </div>
+            <div id="my-checkin-preview" class="photo-preview att-preview empty" onclick="document.getElementById('my-checkin-input').click()">
+              <div class="photo-placeholder">
+                <span>📸</span>
+                <p>Tap to capture</p>
+              </div>
+            </div>
+            <input type="file" id="my-checkin-input" accept="image/*" capture="user" style="display:none" onchange="handleAttendancePhoto(event,'checkin')" />
+            <div id="my-checkin-meta" class="att-meta hidden">
+              <span class="att-time-badge" id="my-checkin-time">—</span>
+            </div>
+            <div id="my-checkin-actions" class="photo-actions hidden">
+              <button class="btn-primary att-save-btn" onclick="saveAttendance('checkin')">✅ Mark Check In</button>
+            </div>
+            <div id="my-checkin-saved" class="att-saved-badge hidden">
+              <span>✅ Checked In</span>
+              <span id="my-checkin-saved-time" class="att-saved-time"></span>
+            </div>
+          </div>
+
+          <!-- Check Out -->
+          <div class="card att-card">
+            <div class="att-card-header">
+              <span class="att-icon">🔴</span>
+              <div>
+                <h3>Check Out</h3>
+                <p class="att-subtitle">Photo when you leave office</p>
+              </div>
+            </div>
+            <div id="my-checkout-preview" class="photo-preview att-preview empty" onclick="document.getElementById('my-checkout-input').click()">
+              <div class="photo-placeholder">
+                <span>📸</span>
+                <p>Tap to capture</p>
+              </div>
+            </div>
+            <input type="file" id="my-checkout-input" accept="image/*" capture="user" style="display:none" onchange="handleAttendancePhoto(event,'checkout')" />
+            <div id="my-checkout-meta" class="att-meta hidden">
+              <span class="att-time-badge checkout" id="my-checkout-time">—</span>
+            </div>
+            <div id="my-checkout-actions" class="photo-actions hidden">
+              <button class="btn-primary att-save-btn checkout-btn" onclick="saveAttendance('checkout')">✅ Mark Check Out</button>
+            </div>
+            <div id="my-checkout-saved" class="att-saved-badge hidden">
+              <span>✅ Checked Out</span>
+              <span id="my-checkout-saved-time" class="att-saved-time"></span>
+            </div>
+          </div>
+
+          <!-- My Duration -->
+          <div class="card" id="my-duration-card" style="display:none">
+            <div class="duration-display">
+              <span class="duration-icon">⏱</span>
+              <div>
+                <div class="duration-label">Time at Office</div>
+                <div class="duration-value" id="my-duration-value">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- THEIR ATTENDANCE -->
+        <div class="user-column">
+          <div class="column-header">
+            <span id="their-att-avatar" class="col-avatar"></span>
+            <span id="their-att-name" class="col-name"></span>
+          </div>
+
+          <!-- Their Check In -->
+          <div class="card att-card">
+            <div class="att-card-header">
+              <span class="att-icon">🟢</span>
+              <div>
+                <h3>Check In</h3>
+                <p class="att-subtitle" id="their-checkin-subtitle">Waiting...</p>
+              </div>
+            </div>
+            <div id="their-checkin-preview" class="photo-preview att-preview empty">
+              <div class="photo-placeholder">
+                <span>⏳</span>
+                <p id="their-checkin-wait-text">Not checked in yet</p>
+              </div>
+            </div>
+            <div id="their-checkin-meta" class="att-meta hidden">
+              <span class="att-time-badge" id="their-checkin-time">—</span>
+            </div>
+          </div>
+
+          <!-- Their Check Out -->
+          <div class="card att-card">
+            <div class="att-card-header">
+              <span class="att-icon">🔴</span>
+              <div>
+                <h3>Check Out</h3>
+                <p class="att-subtitle" id="their-checkout-subtitle">Waiting...</p>
+              </div>
+            </div>
+            <div id="their-checkout-preview" class="photo-preview att-preview empty">
+              <div class="photo-placeholder">
+                <span>⏳</span>
+                <p id="their-checkout-wait-text">Not checked out yet</p>
+              </div>
+            </div>
+            <div id="their-checkout-meta" class="att-meta hidden">
+              <span class="att-time-badge checkout" id="their-checkout-time">—</span>
+            </div>
+          </div>
+
+          <!-- Their Duration -->
+          <div class="card" id="their-duration-card" style="display:none">
+            <div class="duration-display">
+              <span class="duration-icon">⏱</span>
+              <div>
+                <div class="duration-label">Time at Office</div>
+                <div class="duration-value" id="their-duration-value">—</div>
+              </div>
+            </div>
           </div>
         </div>
 

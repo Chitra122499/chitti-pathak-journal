@@ -548,3 +548,85 @@ header h2 { font-size: 18px; font-weight: 700; line-height: 1.2; }
   margin-right: 6px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── ATTENDANCE ── */
+.attendance-header { margin-bottom: 20px; }
+.attendance-header h2 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.attendance-header p { color: var(--text-muted); font-size: 14px; }
+
+.att-card { display: flex; flex-direction: column; gap: 12px; }
+
+.att-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.att-icon { font-size: 28px; line-height: 1; }
+.att-card-header h3 { font-size: 16px; font-weight: 700; margin: 0 0 2px; }
+.att-subtitle { font-size: 12px; color: var(--text-muted); margin: 0; }
+
+.att-preview {
+  aspect-ratio: 4/3;
+  border-radius: 12px;
+}
+
+.att-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.att-time-badge {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.att-time-badge.checkout {
+  background: #fce4ec;
+  color: #c62828;
+  border-color: #ef9a9a;
+}
+
+.att-save-btn {
+  width: 100%;
+  text-align: center;
+  background: #43a047;
+}
+.att-save-btn:hover { background: #2e7d32; }
+.att-save-btn.checkout-btn { background: #e53935; }
+.att-save-btn.checkout-btn:hover { background: #c62828; }
+
+.att-saved-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f1f8e9;
+  border: 1px solid #aed581;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #33691e;
+}
+.att-saved-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: #558b2f;
+}
+
+/* Duration card */
+.duration-display {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.duration-icon { font-size: 32px; }
+.duration-label { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+.duration-value { font-size: 22px; font-weight: 700; color: var(--primary-dark); }

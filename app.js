@@ -191,6 +191,7 @@ function switchTab(name) {
   document.getElementById("tab-" + name).classList.add("active");
   document.getElementById("tab-content-" + name).classList.add("active");
   if (name === "favourites") loadFavourites();
+  if (name === "attendance") { initAttendanceTab(); listenAttendance(); }
 }
 
 // ── PHOTO UPLOAD + EXIF ───────────────────────────────────
@@ -659,4 +660,167 @@ function escHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ══════════════════════════════════════════════════════════
+//  ATTENDANCE
+// ══════════════════════════════════════════════════════════
+
+let pendingAttendance = { checkin: null, checkout: null };
+
+// Called when attendance tab is shown — set labels
+function initAttendanceTab() {
+  document.getElementById("attendance-date-label").textContent = formatDisplayDate(todayKey);
+  document.getElementById("my-att-avatar").textContent    = AVATARS[currentUser];
+  document.getElementById("my-att-name").textContent      = currentUser;
+  document.getElementById("their-att-avatar").textContent  = AVATARS[otherUser];
+  document.getElementById("their-att-name").textContent    = otherUser;
+  document.getElementById("their-checkin-wait-text").textContent  = otherUser + " hasn't checked in yet";
+  document.getElementById("their-checkout-wait-text").textContent = otherUser + " hasn't checked out yet";
+}
+
+// Handle photo capture for checkin or checkout
+async function handleAttendancePhoto(event, type) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const dataUrl = e.target.result;
+
+    // Show preview
+    const preview = document.getElementById("my-" + type + "-preview");
+    preview.innerHTML = `<img src="${dataUrl}" alt="${type} photo" />`;
+    preview.classList.add("filled");
+    preview.onclick = null;
+
+    // Capture current time (device time — more reliable for attendance than EXIF)
+    const now = new Date();
+    const timeStr = now.toLocaleString("en-GB", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+
+    document.getElementById("my-" + type + "-meta").classList.remove("hidden");
+    document.getElementById("my-" + type + "-time").textContent = timeStr;
+    document.getElementById("my-" + type + "-actions").classList.remove("hidden");
+    document.getElementById("my-" + type + "-saved").classList.add("hidden");
+
+    pendingAttendance[type] = { dataUrl, time: timeStr, timestamp: now.getTime() };
+  };
+  reader.readAsDataURL(file);
+}
+
+// Save check-in or check-out to Firebase
+async function saveAttendance(type) {
+  if (!pendingAttendance[type]) { showToast("Capture a photo first"); return; }
+
+  const btn = document.querySelector(`#my-${type}-actions .att-save-btn`);
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled  = true;
+
+  try {
+    await db.ref(`attendance/${todayKey}/${currentUser}/${type}`).set({
+      dataUrl:   pendingAttendance[type].dataUrl,
+      time:      pendingAttendance[type].time,
+      timestamp: pendingAttendance[type].timestamp,
+      savedAt:   Date.now()
+    });
+
+    document.getElementById("my-" + type + "-actions").classList.add("hidden");
+    const savedEl = document.getElementById("my-" + type + "-saved");
+    savedEl.classList.remove("hidden");
+    document.getElementById("my-" + type + "-saved-time").textContent = pendingAttendance[type].time;
+
+    showToast(type === "checkin" ? "🟢 Checked in!" : "🔴 Checked out!");
+    pendingAttendance[type] = null;
+  } catch (err) {
+    showToast("❌ Save failed.");
+    console.error(err);
+    btn.innerHTML = type === "checkin" ? "✅ Mark Check In" : "✅ Mark Check Out";
+    btn.disabled  = false;
+  }
+}
+
+// Listen for attendance changes in real time
+function listenAttendance() {
+  db.ref("attendance/" + todayKey).on("value", function (snap) {
+    const data = snap.val() || {};
+    renderMyAttendance(data[currentUser] || {});
+    renderTheirAttendance(data[otherUser]  || {});
+  });
+}
+
+function renderMyAttendance(data) {
+  for (const type of ["checkin", "checkout"]) {
+    if (data[type] && !pendingAttendance[type]) {
+      const preview = document.getElementById("my-" + type + "-preview");
+      preview.innerHTML = `<img src="${data[type].dataUrl}" alt="${type}" />`;
+      preview.classList.add("filled");
+      preview.onclick = null;
+
+      document.getElementById("my-" + type + "-meta").classList.remove("hidden");
+      document.getElementById("my-" + type + "-time").textContent = data[type].time;
+      document.getElementById("my-" + type + "-actions").classList.add("hidden");
+
+      const savedEl = document.getElementById("my-" + type + "-saved");
+      savedEl.classList.remove("hidden");
+      document.getElementById("my-" + type + "-saved-time").textContent = data[type].time;
+    }
+  }
+  updateMyDuration(data);
+}
+
+function renderTheirAttendance(data) {
+  for (const type of ["checkin", "checkout"]) {
+    const preview  = document.getElementById("their-" + type + "-preview");
+    const metaEl   = document.getElementById("their-" + type + "-meta");
+    const timeEl   = document.getElementById("their-" + type + "-time");
+    const subtitle = document.getElementById("their-" + type + "-subtitle");
+
+    if (data[type] && data[type].dataUrl) {
+      preview.innerHTML = `<img src="${data[type].dataUrl}" alt="${type}" />`;
+      preview.classList.add("filled");
+      metaEl.classList.remove("hidden");
+      timeEl.textContent = data[type].time;
+      if (subtitle) subtitle.textContent = type === "checkin" ? "Arrived at office" : "Left office";
+    } else {
+      preview.innerHTML = `<div class="photo-placeholder"><span>⏳</span><p>${otherUser} hasn't ${type === "checkin" ? "checked in" : "checked out"} yet</p></div>`;
+      preview.classList.remove("filled");
+      metaEl.classList.add("hidden");
+      if (subtitle) subtitle.textContent = "Waiting...";
+    }
+  }
+  updateTheirDuration(data);
+}
+
+function updateMyDuration(data) {
+  const card = document.getElementById("my-duration-card");
+  if (data.checkin && data.checkout) {
+    const diff = data.checkout.timestamp - data.checkin.timestamp;
+    document.getElementById("my-duration-value").textContent = formatDuration(diff);
+    card.style.display = "block";
+  } else {
+    card.style.display = "none";
+  }
+}
+
+function updateTheirDuration(data) {
+  const card = document.getElementById("their-duration-card");
+  if (data.checkin && data.checkout) {
+    const diff = data.checkout.timestamp - data.checkin.timestamp;
+    document.getElementById("their-duration-value").textContent = formatDuration(diff);
+    card.style.display = "block";
+  } else {
+    card.style.display = "none";
+  }
+}
+
+function formatDuration(ms) {
+  if (ms <= 0) return "—";
+  const totalMins = Math.floor(ms / 60000);
+  const hrs  = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  return `${mins}m`;
 }
