@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chitti & Pathak Journal</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- EXIF reader library -->
+  <script src="https://cdn.jsdelivr.net/npm/exifr/dist/lite.umd.js"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+</head>
+<body>
+
+  <!-- ── LOGIN SCREEN ── -->
+  <div id="login-screen" class="screen active">
+    <div class="login-card">
+      <div class="login-logo">📔</div>
+      <h1>Our Journal</h1>
+      <p class="login-subtitle">Chitti & Pathak</p>
+      <div class="login-form">
+        <label>Who are you?</label>
+        <div class="user-select">
+          <button class="user-btn" data-user="Chitti" onclick="selectUser('Chitti')">
+            <span class="avatar">🌸</span>
+            <span>Chitti</span>
+          </button>
+          <button class="user-btn" data-user="Pathak" onclick="selectUser('Pathak')">
+            <span class="avatar">🌿</span>
+            <span>Pathak</span>
+          </button>
+        </div>
+        <input type="password" id="pin-input" placeholder="Enter your PIN" maxlength="6" />
+        <button class="btn-primary" onclick="login()">Enter Journal</button>
+        <p id="login-error" class="error-msg"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MAIN APP ── -->
+  <div id="app-screen" class="screen">
+
+    <!-- Header -->
+    <header>
+      <div class="header-left">
+        <span class="header-logo">📔</span>
+        <div>
+          <h2>Our Journal</h2>
+          <span id="header-date" class="header-date"></span>
+        </div>
+      </div>
+      <div class="header-right">
+        <span id="header-user" class="header-user"></span>
+        <button class="btn-icon" onclick="logout()" title="Logout">⎋</button>
+      </div>
+    </header>
+
+    <!-- Tab Bar -->
+    <nav class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('today')" id="tab-today">
+        <span>📅</span> Today
+      </button>
+      <button class="tab-btn" onclick="switchTab('journal')" id="tab-journal">
+        <span>✍️</span> My Day
+      </button>
+      <button class="tab-btn" onclick="switchTab('favourites')" id="tab-favourites">
+        <span>❤️</span> Favourites
+      </button>
+    </nav>
+
+    <!-- ── TAB: TODAY ── -->
+    <div id="tab-content-today" class="tab-content active">
+      <div class="two-col">
+
+        <!-- MY SIDE -->
+        <div class="user-column" id="my-column">
+          <div class="column-header">
+            <span id="my-avatar" class="col-avatar"></span>
+            <span id="my-name" class="col-name"></span>
+            <span class="col-badge">You</span>
+          </div>
+
+          <!-- Photo Upload -->
+          <div class="card" id="my-photo-card">
+            <h3>📷 Today's Photo</h3>
+            <div id="my-photo-preview" class="photo-preview empty" onclick="document.getElementById('my-photo-input').click()">
+              <div class="photo-placeholder">
+                <span>📸</span>
+                <p>Tap to take or upload a photo</p>
+              </div>
+            </div>
+            <input type="file" id="my-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoUpload(event)" />
+            <div id="my-photo-meta" class="photo-meta hidden">
+              <div class="meta-row"><span>🕐</span><span id="my-photo-time">—</span></div>
+              <div class="meta-row"><span>📍</span><span id="my-photo-location">—</span></div>
+            </div>
+            <div id="my-photo-actions" class="photo-actions hidden">
+              <button class="btn-secondary" onclick="document.getElementById('my-photo-input').click()">Change Photo</button>
+              <button class="btn-primary" onclick="savePhoto()" id="my-save-photo-btn">Save Photo</button>
+            </div>
+            <div id="my-photo-saved" class="saved-indicator hidden">
+              <span>✅ Photo saved</span>
+              <button class="btn-text" onclick="deleteMyPhoto()">Remove</button>
+            </div>
+          </div>
+
+          <!-- Reactions on my photo -->
+          <div class="card" id="my-photo-reactions-card" style="display:none">
+            <h4>Reactions on your photo</h4>
+            <div id="my-photo-reactions" class="reactions-display"></div>
+          </div>
+        </div>
+
+        <!-- THEIR SIDE -->
+        <div class="user-column" id="their-column">
+          <div class="column-header">
+            <span id="their-avatar" class="col-avatar"></span>
+            <span id="their-name" class="col-name"></span>
+          </div>
+
+          <!-- Their Photo -->
+          <div class="card">
+            <h3>📷 Their Photo</h3>
+            <div id="their-photo-preview" class="photo-preview empty">
+              <div class="photo-placeholder">
+                <span>⏳</span>
+                <p>Waiting for their photo...</p>
+              </div>
+            </div>
+            <div id="their-photo-meta" class="photo-meta hidden">
+              <div class="meta-row"><span>🕐</span><span id="their-photo-time">—</span></div>
+              <div class="meta-row"><span>📍</span><span id="their-photo-location">—</span></div>
+            </div>
+            <div id="their-photo-react-bar" class="react-bar hidden">
+              <button class="react-btn" onclick="reactToPhoto('❤️')" title="Love">❤️</button>
+              <button class="react-btn" onclick="reactToPhoto('😍')" title="Amazing">😍</button>
+              <button class="react-btn" onclick="reactToPhoto('😊')" title="Happy">😊</button>
+              <button class="react-btn" onclick="reactToPhoto('🔥')" title="Fire">🔥</button>
+              <button class="btn-text" onclick="downloadTheirPhoto()" id="their-download-btn">⬇ Download</button>
+              <button class="btn-icon-sm" onclick="favouriteTheirPhoto()" title="Save to favourites">⭐</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- LOCK MESSAGE -->
+      <div id="lock-banner" class="lock-banner hidden">
+        🔒 Updates are locked. The journal closed at 2AM IST.
+        <span id="no-data-msg"></span>
+      </div>
+    </div>
+
+    <!-- ── TAB: MY DAY JOURNAL ── -->
+    <div id="tab-content-journal" class="tab-content">
+      <div class="two-col">
+
+        <!-- MY JOURNAL -->
+        <div class="user-column">
+          <div class="column-header">
+            <span id="my-journal-avatar" class="col-avatar"></span>
+            <span id="my-journal-name" class="col-name"></span>
+            <span class="col-badge">You</span>
+          </div>
+          <div class="card">
+            <h3>✍️ Describe Your Day</h3>
+            <textarea id="my-journal-text" class="journal-textarea" placeholder="How was your day? Write anything..."></textarea>
+            <div class="journal-actions">
+              <span id="my-journal-chars" class="char-count">0 / 1000</span>
+              <button class="btn-primary" onclick="saveJournal()" id="save-journal-btn">Save Entry</button>
+            </div>
+            <div id="my-journal-saved" class="saved-indicator hidden">✅ Entry saved</div>
+          </div>
+          <!-- Reactions on my journal -->
+          <div class="card" id="my-journal-reactions-card" style="display:none">
+            <h4>Reactions on your entry</h4>
+            <div id="my-journal-reactions" class="reactions-display"></div>
+            <div id="my-journal-replies" class="replies-display"></div>
+          </div>
+        </div>
+
+        <!-- THEIR JOURNAL -->
+        <div class="user-column">
+          <div class="column-header">
+            <span id="their-journal-avatar" class="col-avatar"></span>
+            <span id="their-journal-name" class="col-name"></span>
+          </div>
+          <div class="card">
+            <h3>📖 Their Day</h3>
+            <div id="their-journal-text" class="journal-readonly">
+              <p class="placeholder-text">⏳ Waiting for their entry...</p>
+            </div>
+            <div id="their-journal-react-bar" class="react-bar hidden">
+              <button class="react-btn" onclick="reactToJournal('❤️')">❤️</button>
+              <button class="react-btn" onclick="reactToJournal('😊')">😊</button>
+              <button class="react-btn" onclick="reactToJournal('🤗')">🤗</button>
+              <button class="react-btn" onclick="reactToJournal('💙')">💙</button>
+              <button class="btn-icon-sm" onclick="favouriteTheirJournal()" title="Save to favourites">⭐</button>
+            </div>
+            <div id="their-journal-reply-box" class="reply-box hidden">
+              <input type="text" id="their-journal-reply-input" placeholder="Write a reply..." maxlength="200" />
+              <button class="btn-primary btn-sm" onclick="replyToJournal()">Send</button>
+            </div>
+            <button class="btn-text" id="toggle-reply-btn" style="display:none" onclick="toggleReplyBox()">💬 Reply</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── TAB: FAVOURITES ── -->
+    <div id="tab-content-favourites" class="tab-content">
+      <div class="favourites-header">
+        <h2>❤️ Saved Favourites</h2>
+        <p>Photos and entries you've liked — kept forever</p>
+      </div>
+      <div id="favourites-grid" class="favourites-grid">
+        <div class="empty-favourites">
+          <span>⭐</span>
+          <p>Nothing saved yet. Star photos or journal entries to keep them here.</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end app-screen -->
+
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
