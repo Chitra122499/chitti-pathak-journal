@@ -123,6 +123,13 @@ function enterApp() {
 
   document.getElementById("att-date-strip").textContent = "📅 " + formatDisplayDate(todayKey);
 
+  // Set book page dates
+  const bookDate = formatDisplayDate(todayKey);
+  const bdL = document.getElementById("book-date-left");
+  const bdR = document.getElementById("book-date-right");
+  if (bdL) bdL.textContent = bookDate;
+  if (bdR) bdR.textContent = bookDate;
+
   checkLockedUI();
   setInterval(checkLockedUI, 60000);
   setInterval(runAutoDelete, 60000);
@@ -515,13 +522,11 @@ function renderMyJournalRow(row) {
 }
 
 function renderTheirJournalRow(row) {
-  const div      = document.getElementById("their-journal-text");
-  const reactBar = document.getElementById("their-journal-react-bar");
-  const replyBtn = document.getElementById("toggle-reply-btn");
+  const div    = document.getElementById("their-journal-text");
+  const footer = document.getElementById("their-journal-footer");
   if (row.entry_text) {
     div.innerHTML = escHtml(row.entry_text).replace(/\n/g, "<br>");
-    reactBar.classList.remove("hidden");
-    replyBtn.style.display = "inline-block";
+    if (footer) footer.style.display = "flex";
   }
 }
 
@@ -532,7 +537,7 @@ async function loadReactions() {
     .eq("target_user", currentUser);
   if (!data || !data.length) return;
 
-  document.getElementById("my-journal-reactions-card").style.display = "block";
+  document.getElementById("my-journal-reactions-card").classList.remove("hidden");
   document.getElementById("my-journal-reactions").innerHTML = data
     .map(r => `<span class="reaction-chip">${r.emoji} <b>${r.from_user}</b></span>`)
     .join("");
@@ -546,7 +551,7 @@ async function loadReplies() {
     .order("created_at", { ascending: true });
   if (!data || !data.length) return;
 
-  document.getElementById("my-journal-reactions-card").style.display = "block";
+  document.getElementById("my-journal-reactions-card").classList.remove("hidden");
   document.getElementById("my-journal-replies").innerHTML = data
     .map(r => `<div class="reply-item"><div class="reply-author">${escHtml(r.from_user)}</div>${escHtml(r.reply_text)}</div>`)
     .join("");

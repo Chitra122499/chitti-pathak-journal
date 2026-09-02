@@ -297,59 +297,91 @@
     </div><!-- end attendance tab -->
 
     <!-- ── TAB: MY DAY JOURNAL ── -->
-    <div id="tab-content-journal" class="tab-content">
-      <div class="two-col">
+    <div id="tab-content-journal" class="tab-content journal-tab-content">
 
-        <!-- MY JOURNAL -->
-        <div class="user-column">
-          <div class="column-header">
-            <span id="my-journal-avatar" class="col-avatar"></span>
-            <span id="my-journal-name" class="col-name"></span>
-            <span class="col-badge">You</span>
-          </div>
-          <div class="card">
-            <h3>✍️ Describe Your Day</h3>
-            <textarea id="my-journal-text" class="journal-textarea" placeholder="How was your day? Write anything..."></textarea>
-            <div class="journal-actions">
-              <span id="my-journal-chars" class="char-count">0 / 1000</span>
-              <button class="btn-primary" onclick="saveJournal()" id="save-journal-btn">Save Entry</button>
-            </div>
-            <div id="my-journal-saved" class="saved-indicator hidden">✅ Entry saved</div>
-          </div>
-          <div class="card" id="my-journal-reactions-card" style="display:none">
-            <h4>Reactions on your entry</h4>
-            <div id="my-journal-reactions" class="reactions-display"></div>
-            <div id="my-journal-replies" class="replies-display"></div>
-          </div>
-        </div>
+      <!-- Book wrapper -->
+      <div class="book-wrap">
+        <div class="book">
 
-        <!-- THEIR JOURNAL -->
-        <div class="user-column">
-          <div class="column-header">
-            <span id="their-journal-avatar" class="col-avatar"></span>
-            <span id="their-journal-name" class="col-name"></span>
-          </div>
-          <div class="card">
-            <h3>📖 Their Day</h3>
-            <div id="their-journal-text" class="journal-readonly">
-              <p class="placeholder-text">⏳ Waiting for their entry...</p>
+          <!-- LEFT PAGE — My entry -->
+          <div class="book-page book-page-left">
+            <div class="page-header">
+              <div class="page-author">
+                <span id="my-journal-avatar" class="page-avatar"></span>
+                <span id="my-journal-name" class="page-author-name"></span>
+                <span class="page-you-badge">You</span>
+              </div>
+              <div class="page-date" id="book-date-left"></div>
             </div>
-            <div id="their-journal-react-bar" class="react-bar hidden">
-              <button class="react-btn" onclick="reactToJournal('❤️')">❤️</button>
-              <button class="react-btn" onclick="reactToJournal('😊')">😊</button>
-              <button class="react-btn" onclick="reactToJournal('🤗')">🤗</button>
-              <button class="react-btn" onclick="reactToJournal('💙')">💙</button>
-              <button class="btn-icon-sm" onclick="favouriteTheirJournal()" title="Save to favourites">⭐</button>
-            </div>
-            <div id="their-journal-reply-box" class="reply-box hidden">
-              <input type="text" id="their-journal-reply-input" placeholder="Write a reply..." maxlength="200" />
-              <button class="btn-primary btn-sm" onclick="replyToJournal()">Send</button>
-            </div>
-            <button class="btn-text" id="toggle-reply-btn" style="display:none" onclick="toggleReplyBox()">💬 Reply</button>
-          </div>
-        </div>
 
-      </div>
+            <div class="page-divider"></div>
+
+            <div class="page-body">
+              <textarea
+                id="my-journal-text"
+                class="book-textarea"
+                placeholder="Dear diary, today was..."></textarea>
+            </div>
+
+            <div class="page-footer">
+              <span id="my-journal-chars" class="book-char-count">0 / 1000</span>
+              <div class="page-footer-right">
+                <span id="my-journal-saved" class="book-saved hidden">✅ Saved</span>
+                <button class="book-save-btn" onclick="saveJournal()" id="save-journal-btn">Save ✦</button>
+              </div>
+            </div>
+
+            <!-- Reactions received -->
+            <div id="my-journal-reactions-card" class="book-reactions hidden">
+              <div id="my-journal-reactions" class="reactions-display"></div>
+              <div id="my-journal-replies" class="replies-display"></div>
+            </div>
+
+            <div class="page-number">1</div>
+          </div>
+
+          <!-- SPINE -->
+          <div class="book-spine"></div>
+
+          <!-- RIGHT PAGE — Their entry -->
+          <div class="book-page book-page-right">
+            <div class="page-header">
+              <div class="page-author">
+                <span id="their-journal-avatar" class="page-avatar"></span>
+                <span id="their-journal-name" class="page-author-name"></span>
+              </div>
+              <div class="page-date" id="book-date-right"></div>
+            </div>
+
+            <div class="page-divider"></div>
+
+            <div class="page-body">
+              <div id="their-journal-text" class="book-readonly">
+                <span class="book-placeholder">✦ Waiting for their words...</span>
+              </div>
+            </div>
+
+            <div class="page-footer" id="their-journal-footer" style="display:none">
+              <div class="react-row">
+                <button class="book-react-btn" onclick="reactToJournal('❤️')">❤️</button>
+                <button class="book-react-btn" onclick="reactToJournal('😊')">😊</button>
+                <button class="book-react-btn" onclick="reactToJournal('🤗')">🤗</button>
+                <button class="book-react-btn" onclick="reactToJournal('💙')">💙</button>
+                <button class="book-fav-btn" onclick="favouriteTheirJournal()" title="Save">⭐</button>
+                <button class="book-reply-toggle" id="toggle-reply-btn" onclick="toggleReplyBox()">✦ Reply</button>
+              </div>
+              <div id="their-journal-reply-box" class="book-reply-box hidden">
+                <input type="text" id="their-journal-reply-input" placeholder="Write a reply..." maxlength="200" />
+                <button class="book-save-btn" onclick="replyToJournal()">Send</button>
+              </div>
+            </div>
+
+            <div class="page-number">2</div>
+          </div>
+
+        </div><!-- end book -->
+      </div><!-- end book-wrap -->
+
     </div>
 
     <!-- ── TAB: FAVOURITES ── -->
