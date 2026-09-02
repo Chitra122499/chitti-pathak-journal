@@ -1,56 +1,25 @@
 // ══════════════════════════════════════════════════════════
-//  CHITTI & PATHAK JOURNAL
+//  CHITTI & PATHAK JOURNAL  —  Supabase edition
 // ══════════════════════════════════════════════════════════
 
-let db;
-let storage;
+let sb;           // Supabase client
 let currentUser = null;
 let otherUser   = null;
 let todayKey    = "";
 let isLocked    = false;
 
-// Pending captures before save
 let pending = { checkin: null, checkout: null };
 
 const AVATARS = { Chitti: "🌸", Pathak: "🌿" };
 
-// ── IMAGE COMPRESSION ────────────────────────────────────
-// Resizes and compresses a dataUrl to max 800px, JPEG quality 0.72
-// Reduces a 4MB phone photo to ~100-150KB — makes Firebase saves instant
-function compressImage(dataUrl, maxWidth, quality) {
-  return new Promise(function (resolve) {
-    maxWidth = maxWidth || 800;
-    quality  = quality  || 0.72;
-    const img = new Image();
-    img.onload = function () {
-      let w = img.width, h = img.height;
-      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
-      const canvas = document.createElement("canvas");
-      canvas.width  = w;
-      canvas.height = h;
-      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.src = dataUrl;
-  });
-}
-
-
+// ── BOOT ─────────────────────────────────────────────────
 window.addEventListener("load", function () {
-  try {
-    firebase.initializeApp(FIREBASE_CONFIG);
-    db      = firebase.database();
-    storage = firebase.storage();
-  } catch (e) {
-    alert("Firebase init failed. Check firebase-config.js.\n\n" + e.message);
-    return;
-  }
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  // Toast element
+  // Toast
   if (!document.getElementById("toast")) {
     const t = document.createElement("div");
-    t.id = "toast";
-    document.body.appendChild(t);
+    t.id = "toast"; document.body.appendChild(t);
   }
 
   // Journal char counter
@@ -60,12 +29,10 @@ window.addEventListener("load", function () {
     if (this.value.length > 1000) this.value = this.value.slice(0, 1000);
   });
 
-  // Enter on PIN
   document.getElementById("pin-input").addEventListener("keydown", function (e) {
     if (e.key === "Enter") login();
   });
 
-  // Resume session
   const saved = sessionStorage.getItem("journal_user");
   if (saved && USER_CREDENTIALS[saved] !== undefined) {
     currentUser = saved;
@@ -80,10 +47,8 @@ function getNowIST() {
 }
 
 function getJournalDayKey() {
-  const ist = getNowIST();
-  const base = ist.getHours() < 2
-    ? new Date(ist.getTime() - 86400000)
-    : ist;
+  const ist  = getNowIST();
+  const base = ist.getHours() < 2 ? new Date(ist.getTime() - 86400000) : ist;
   return base.toISOString().slice(0, 10);
 }
 
@@ -141,15 +106,13 @@ function enterApp() {
   document.getElementById("app-screen").classList.add("active");
 
   document.getElementById("header-user").textContent = AVATARS[currentUser] + " " + currentUser;
-  document.getElementById("header-date").textContent  = formatDisplayDate(todayKey);
+  document.getElementById("header-date").textContent = formatDisplayDate(todayKey);
 
-  // Journal avatars
-  document.getElementById("my-journal-avatar").textContent   = AVATARS[currentUser];
-  document.getElementById("my-journal-name").textContent     = currentUser;
+  document.getElementById("my-journal-avatar").textContent    = AVATARS[currentUser];
+  document.getElementById("my-journal-name").textContent      = currentUser;
   document.getElementById("their-journal-avatar").textContent = AVATARS[otherUser];
   document.getElementById("their-journal-name").textContent   = otherUser;
 
-  // Attendance col headers
   document.getElementById("my-att-header").innerHTML =
     `<span style="font-size:26px">${AVATARS[currentUser]}</span>
      <span class="att-col-name">${currentUser}</span>
@@ -165,16 +128,14 @@ function enterApp() {
   setInterval(runAutoDelete, 60000);
   runAutoDelete();
 
-  // Start listening
-  listenAttendance();
-  listenJournal();
+  loadAttendance();
+  subscribeAttendance();
+  loadJournal();
+  subscribeJournal();
+  subscribeNotifications();
   loadFavourites();
-
-  // Listen for notifications (their attendance updates)
-  listenNotifications();
 }
 
-// ── LOCK ─────────────────────────────────────────────────
 function checkLockedUI() {
   const h = getNowIST().getHours();
   isLocked = h >= 0 && h < 2;
@@ -189,33 +150,55 @@ function switchTab(name) {
   if (name === "favourites") loadFavourites();
 }
 
+// ── IMAGE COMPRESSION ─────────────────────────────────────
+function compressImage(dataUrl, maxWidth, quality) {
+  return new Promise(function (resolve) {
+    maxWidth = maxWidth || 900;
+    quality  = quality  || 0.75;
+    const img = new Image();
+    img.onload = function () {
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
+function dataUrlToBlob(dataUrl) {
+  const parts  = dataUrl.split(",");
+  const mime   = parts[0].match(/:(.*?);/)[1];
+  const binary = atob(parts[1]);
+  const arr    = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
 // ══════════════════════════════════════════════════════════
-//  ATTENDANCE — CAPTURE
+//  ATTENDANCE
 // ══════════════════════════════════════════════════════════
 
 function startCapture(type) {
   document.getElementById("my-" + type + "-input").click();
 }
 
-function handleAttCapture(event, type) {
+async function handleAttCapture(event, type) {
   const file = event.target.files[0];
   if (!file) return;
-
   const timeStr = nowTimeStr();
   const reader  = new FileReader();
-
   reader.onload = async function (e) {
     const compressed = await compressImage(e.target.result);
-    const dataUrl = compressed;
-    pending[type] = { dataUrl, time: timeStr, timestamp: Date.now() };
+    pending[type] = { dataUrl: compressed, time: timeStr, timestamp: Date.now() };
 
-    // Show preview
     document.getElementById("my-" + type + "-idle").classList.add("hidden");
     document.getElementById("my-" + type + "-done").classList.add("hidden");
-
     const wrap = document.getElementById("my-" + type + "-preview-wrap");
     wrap.classList.remove("hidden");
-    document.getElementById("my-" + type + "-img").src = dataUrl;
+    document.getElementById("my-" + type + "-img").src = compressed;
     document.getElementById("my-" + type + "-preview-time").textContent = timeStr;
   };
   reader.readAsDataURL(file);
@@ -223,37 +206,43 @@ function handleAttCapture(event, type) {
 
 async function confirmAttendance(type) {
   if (!pending[type]) return;
-
   const btn = document.querySelector(`#my-${type}-preview-wrap .btn-primary`);
   btn.innerHTML = '<span class="spinner"></span> Uploading...';
   btn.disabled  = true;
 
   try {
-    // Convert compressed dataUrl → Blob for fast Storage upload
-    const blob      = dataUrlToBlob(pending[type].dataUrl);
-    const path      = `attendance/${todayKey}/${currentUser}/${type}.jpg`;
-    const storageRef = storage.ref(path);
+    // 1. Upload photo to Supabase Storage
+    const blob     = dataUrlToBlob(pending[type].dataUrl);
+    const fileName = `${todayKey}/${currentUser}/${type}-${Date.now()}.jpg`;
+    const { data: uploadData, error: uploadError } =
+      await sb.storage.from("attendance-photos").upload(fileName, blob, {
+        contentType:  "image/jpeg",
+        upsert:       true
+      });
+    if (uploadError) throw uploadError;
 
-    // Upload blob (fast — binary, not base64 JSON)
-    await storageRef.put(blob, { contentType: "image/jpeg" });
-    const downloadURL = await storageRef.getDownloadURL();
+    // 2. Get public URL
+    const { data: urlData } = sb.storage.from("attendance-photos").getPublicUrl(fileName);
+    const photoUrl = urlData.publicUrl;
 
-    // Save only the URL + metadata to Realtime DB (tiny, instant)
-    await db.ref(`attendance/${todayKey}/${currentUser}/${type}`).set({
-      url:       downloadURL,
-      storagePath: path,
-      time:      pending[type].time,
-      timestamp: pending[type].timestamp,
-      savedAt:   Date.now()
-    });
+    // 3. Upsert row in attendance table
+    const { error: dbError } = await sb.from("attendance").upsert({
+      day_key:   todayKey,
+      user_name: currentUser,
+      type,
+      photo_url: photoUrl,
+      time_str:  pending[type].time,
+      ts:        pending[type].timestamp
+    }, { onConflict: "day_key,user_name,type" });
+    if (dbError) throw dbError;
 
+    // 4. Notify other person
     await sendNotification(
       type === "checkin"
-        ? `${AVATARS[currentUser]} ${currentUser} has checked in at ${pending[type].time}`
-        : `${AVATARS[currentUser]} ${currentUser} has checked out at ${pending[type].time}`
+        ? `${AVATARS[currentUser]} ${currentUser} checked in at ${pending[type].time}`
+        : `${AVATARS[currentUser]} ${currentUser} checked out at ${pending[type].time}`
     );
 
-    // Show done state using the local dataUrl (already in memory — no need to re-fetch)
     showMyAttDone(type, pending[type].dataUrl, pending[type].time);
     pending[type] = null;
     showToast(type === "checkin" ? "🟢 Checked in!" : "🔴 Checked out!");
@@ -265,47 +254,36 @@ async function confirmAttendance(type) {
   }
 }
 
-// Convert dataUrl to Blob for binary upload
-function dataUrlToBlob(dataUrl) {
-  const parts  = dataUrl.split(",");
-  const mime   = parts[0].match(/:(.*?);/)[1];
-  const binary = atob(parts[1]);
-  const arr    = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-  return new Blob([arr], { type: mime });
-}
-
-function showMyAttDone(type, dataUrl, time) {
+function showMyAttDone(type, imgSrc, time) {
   document.getElementById("my-" + type + "-idle").classList.add("hidden");
   document.getElementById("my-" + type + "-preview-wrap").classList.add("hidden");
-
   const done = document.getElementById("my-" + type + "-done");
   done.classList.remove("hidden");
-  document.getElementById("my-" + type + "-done-img").src = dataUrl;
+  document.getElementById("my-" + type + "-done-img").src = imgSrc;
   document.getElementById("my-" + type + "-done-time").textContent = time;
 }
 
-// ── REACHED HOME ─────────────────────────────────────────
 async function markReachedHome() {
   const btn = document.querySelector("#my-home-idle .att-action-btn");
   btn.innerHTML = '<span class="spinner"></span>';
   btn.disabled  = true;
-
   const timeStr = nowTimeStr();
   try {
-    await db.ref(`attendance/${todayKey}/${currentUser}/home`).set({
-      time:      timeStr,
-      timestamp: Date.now(),
-      savedAt:   Date.now()
-    });
+    const { error } = await sb.from("attendance").upsert({
+      day_key:   todayKey,
+      user_name: currentUser,
+      type:      "home",
+      time_str:  timeStr,
+      ts:        Date.now()
+    }, { onConflict: "day_key,user_name,type" });
+    if (error) throw error;
 
     await sendNotification(
-      `${AVATARS[currentUser]} ${currentUser} has reached home safely at ${timeStr} 🏠`
+      `${AVATARS[currentUser]} ${currentUser} reached home safely at ${timeStr} 🏠`
     );
 
     document.getElementById("my-home-idle").classList.add("hidden");
-    const done = document.getElementById("my-home-done");
-    done.classList.remove("hidden");
+    document.getElementById("my-home-done").classList.remove("hidden");
     document.getElementById("my-home-done-time").textContent = timeStr;
     showToast("🏠 Reached home marked!");
   } catch (err) {
@@ -315,121 +293,93 @@ async function markReachedHome() {
   }
 }
 
-// ── NOTIFICATIONS ─────────────────────────────────────────
-async function sendNotification(message) {
-  await db.ref(`notifications/${todayKey}/${otherUser}`).push({
-    message,
-    from:   currentUser,
-    at:     Date.now(),
-    read:   false
+// ── LOAD + SUBSCRIBE ATTENDANCE ───────────────────────────
+async function loadAttendance() {
+  const { data } = await sb.from("attendance")
+    .select("*")
+    .eq("day_key", todayKey);
+  if (!data) return;
+  applyAttendanceRows(data);
+}
+
+function subscribeAttendance() {
+  sb.channel("attendance-" + todayKey)
+    .on("postgres_changes", {
+      event:  "*",
+      schema: "public",
+      table:  "attendance",
+      filter: `day_key=eq.${todayKey}`
+    }, function (payload) {
+      if (payload.new) applyAttendanceRows([payload.new]);
+    })
+    .subscribe();
+}
+
+function applyAttendanceRows(rows) {
+  rows.forEach(function (row) {
+    if (row.user_name === currentUser) renderMyAttRow(row);
+    else                               renderTheirAttRow(row);
   });
+  // Recalculate duration after applying rows
+  recalcDurations();
 }
 
-function listenNotifications() {
-  db.ref(`notifications/${todayKey}/${currentUser}`).on("child_added", function (snap) {
-    const data = snap.val();
-    if (!data || data.read) return;
+// Store latest rows for duration calc
+const attState = { my: {}, their: {} };
 
-    // Mark as read
-    snap.ref.update({ read: true });
-
-    // Show banner
-    showNotifBanner(data.message);
-  });
-}
-
-function showNotifBanner(msg) {
-  const banner = document.getElementById("notif-banner");
-  banner.textContent = "🔔 " + msg;
-  banner.classList.remove("hidden");
-  clearTimeout(window._notifTimer);
-  window._notifTimer = setTimeout(() => banner.classList.add("hidden"), 6000);
-}
-
-// ── REAL-TIME ATTENDANCE ──────────────────────────────────
-function listenAttendance() {
-  db.ref("attendance/" + todayKey).on("value", function (snap) {
-    const data = snap.val() || {};
-    renderMyAtt(data[currentUser]  || {});
-    renderTheirAtt(data[otherUser] || {});
-  });
-}
-
-function renderMyAtt(data) {
-  for (const type of ["checkin", "checkout"]) {
-    if (data[type] && !pending[type]) {
-      // Use url (Storage) if available, fall back to dataUrl (legacy)
-      const imgSrc = data[type].url || data[type].dataUrl;
-      if (imgSrc) showMyAttDone(type, imgSrc, data[type].time);
+function renderMyAttRow(row) {
+  attState.my[row.type] = row;
+  if (row.type === "checkin" || row.type === "checkout") {
+    if (!pending[row.type]) {
+      showMyAttDone(row.type, row.photo_url, row.time_str);
     }
   }
-  if (data.home) {
+  if (row.type === "home") {
     document.getElementById("my-home-idle").classList.add("hidden");
     document.getElementById("my-home-done").classList.remove("hidden");
-    document.getElementById("my-home-done-time").textContent = data.home.time;
+    document.getElementById("my-home-done-time").textContent = row.time_str;
   }
-  calcDuration("my", data);
 }
 
-function renderTheirAtt(data) {
-  // Check In
-  const ciSrc = data.checkin && (data.checkin.url || data.checkin.dataUrl);
-  if (ciSrc) {
+function renderTheirAttRow(row) {
+  attState.their[row.type] = row;
+
+  if (row.type === "checkin") {
     document.getElementById("their-checkin-empty").classList.add("hidden");
-    const done = document.getElementById("their-checkin-done");
-    done.classList.remove("hidden");
-    document.getElementById("their-checkin-done-img").src = ciSrc;
-    document.getElementById("their-checkin-done-time").textContent = data.checkin.time;
+    document.getElementById("their-checkin-done").classList.remove("hidden");
+    document.getElementById("their-checkin-done-img").src = row.photo_url;
+    document.getElementById("their-checkin-done-time").textContent = row.time_str;
     document.getElementById("their-checkin-hint").textContent = "Arrived at office";
-  } else {
-    document.getElementById("their-checkin-empty").classList.remove("hidden");
-    document.getElementById("their-checkin-done").classList.add("hidden");
-    document.getElementById("their-checkin-hint").textContent = "Waiting...";
-    document.getElementById("their-checkin-empty-text").textContent = otherUser + " hasn't checked in yet";
   }
-
-  // Check Out
-  const coSrc = data.checkout && (data.checkout.url || data.checkout.dataUrl);
-  if (coSrc) {
+  if (row.type === "checkout") {
     document.getElementById("their-checkout-empty").classList.add("hidden");
-    const done = document.getElementById("their-checkout-done");
-    done.classList.remove("hidden");
-    document.getElementById("their-checkout-done-img").src = coSrc;
-    document.getElementById("their-checkout-done-time").textContent = data.checkout.time;
+    document.getElementById("their-checkout-done").classList.remove("hidden");
+    document.getElementById("their-checkout-done-img").src = row.photo_url;
+    document.getElementById("their-checkout-done-time").textContent = row.time_str;
     document.getElementById("their-checkout-hint").textContent = "Left office";
-  } else {
-    document.getElementById("their-checkout-empty").classList.remove("hidden");
-    document.getElementById("their-checkout-done").classList.add("hidden");
-    document.getElementById("their-checkout-hint").textContent = "Waiting...";
   }
-
-  // Reached Home
-  if (data.home) {
+  if (row.type === "home") {
     document.getElementById("their-home-empty").classList.add("hidden");
-    const done = document.getElementById("their-home-done");
-    done.classList.remove("hidden");
-    document.getElementById("their-home-done-time").textContent = data.home.time;
+    document.getElementById("their-home-done").classList.remove("hidden");
+    document.getElementById("their-home-done-time").textContent = row.time_str;
     document.getElementById("their-home-hint").textContent = "Safe at home 🏠";
-  } else {
-    document.getElementById("their-home-empty").classList.remove("hidden");
-    document.getElementById("their-home-done").classList.add("hidden");
-    document.getElementById("their-home-hint").textContent = "Waiting...";
   }
+}
 
-  calcDuration("their", data);
+function recalcDurations() {
+  calcDuration("my",    attState.my);
+  calcDuration("their", attState.their);
 }
 
 function calcDuration(side, data) {
   const card = document.getElementById(side + "-duration-card");
-  if (data.checkin && data.checkout && data.checkin.timestamp && data.checkout.timestamp) {
-    const diff = data.checkout.timestamp - data.checkin.timestamp;
-    if (diff > 0) {
-      document.getElementById(side + "-duration-value").textContent = formatDuration(diff);
-      card.classList.remove("hidden");
-      return;
-    }
+  const ci   = data.checkin, co = data.checkout;
+  if (ci && co && ci.ts && co.ts && co.ts > ci.ts) {
+    document.getElementById(side + "-duration-value").textContent = formatDuration(co.ts - ci.ts);
+    card.classList.remove("hidden");
+  } else {
+    card.classList.add("hidden");
   }
-  card.classList.add("hidden");
 }
 
 function formatDuration(ms) {
@@ -438,87 +388,168 @@ function formatDuration(ms) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-// ── FAVOURITE ATTENDANCE PHOTOS ───────────────────────────
+// ── FAVOURITE ATTENDANCE PHOTO ────────────────────────────
 async function favAttendancePhoto(type, side) {
   const userId = side === "my" ? currentUser : otherUser;
-  const snap   = await db.ref(`attendance/${todayKey}/${userId}/${type}`).once("value");
-  const data   = snap.val();
-  if (!data) { showToast("No photo to save"); return; }
+  const { data } = await sb.from("attendance")
+    .select("*")
+    .eq("day_key", todayKey)
+    .eq("user_name", userId)
+    .eq("type", type)
+    .single();
+  if (!data || !data.photo_url) { showToast("No photo to save"); return; }
 
-  const imgUrl = data.url || data.dataUrl;
-  if (!imgUrl) { showToast("No photo to save"); return; }
-
-  await db.ref(`favourites/${currentUser}/att_photos`).push({
-    from:        userId,
-    type,
-    date:        todayKey,
-    url:         imgUrl,
-    storagePath: data.storagePath || null,
-    time:        data.time,
-    savedAt:     Date.now()
+  const { error } = await sb.from("favourites").insert({
+    owner_user: currentUser,
+    kind:       "att_photo",
+    from_user:  userId,
+    day_key:    todayKey,
+    photo_url:  data.photo_url,
+    att_type:   type,
+    time_str:   data.time_str
   });
+  if (error) { showToast("❌ Could not save"); console.error(error); return; }
 
   // Mark as favourited so auto-delete skips it
-  await db.ref(`attendance/${todayKey}/${userId}/${type}/favourited`).set(true);
+  await sb.from("attendance")
+    .update({ favourited: true })
+    .eq("day_key", todayKey)
+    .eq("user_name", userId)
+    .eq("type", type);
 
-  const btn = document.getElementById((side === "my" ? "my" : "their") + "-" + type + "-fav-btn");
+  const btnId = (side === "my" ? "my" : "their") + "-" + type + "-fav-btn";
+  const btn   = document.getElementById(btnId);
   if (btn) btn.classList.add("starred");
   showToast("⭐ Saved to Favourites!");
 }
 
 // ══════════════════════════════════════════════════════════
-//  JOURNAL
+//  NOTIFICATIONS
 // ══════════════════════════════════════════════════════════
-function listenJournal() {
-  db.ref("journal/" + todayKey).on("value", function (snap) {
-    const data = snap.val() || {};
-    renderMyJournal(data[currentUser]  || {});
-    renderTheirJournal(data[otherUser] || {});
+async function sendNotification(message) {
+  await sb.from("notifications").insert({
+    day_key:   todayKey,
+    to_user:   otherUser,
+    from_user: currentUser,
+    message
   });
 }
 
-function renderMyJournal(data) {
-  if (data.entry) {
-    const ta = document.getElementById("my-journal-text");
-    if (!ta.value) {
-      ta.value = data.entry.text || "";
-      document.getElementById("my-journal-chars").textContent =
-        (data.entry.text || "").length + " / 1000";
-    }
-    document.getElementById("my-journal-saved").classList.remove("hidden");
-
-    const hasR = data.entry.reactions && Object.keys(data.entry.reactions).length;
-    const hasRp = data.entry.replies   && Object.keys(data.entry.replies).length;
-    if (hasR || hasRp) {
-      document.getElementById("my-journal-reactions-card").style.display = "block";
-      if (hasR) {
-        document.getElementById("my-journal-reactions").innerHTML =
-          Object.entries(data.entry.reactions)
-            .map(([u, e]) => `<span class="reaction-chip">${e} <b>${u}</b></span>`).join("");
+function subscribeNotifications() {
+  sb.channel("notifs-" + currentUser)
+    .on("postgres_changes", {
+      event:  "INSERT",
+      schema: "public",
+      table:  "notifications",
+      filter: `to_user=eq.${currentUser}`
+    }, function (payload) {
+      if (payload.new && !payload.new.is_read) {
+        showNotifBanner(payload.new.message);
+        sb.from("notifications").update({ is_read: true }).eq("id", payload.new.id);
       }
-      if (hasRp) {
-        document.getElementById("my-journal-replies").innerHTML =
-          Object.values(data.entry.replies).sort((a,b) => a.at - b.at)
-            .map(r => `<div class="reply-item"><div class="reply-author">${escHtml(r.from)}</div>${escHtml(r.text)}</div>`).join("");
-      }
-    }
-  }
+    })
+    .subscribe();
 }
 
-function renderTheirJournal(data) {
+function showNotifBanner(msg) {
+  const banner = document.getElementById("notif-banner");
+  banner.textContent = "🔔 " + msg;
+  banner.classList.remove("hidden");
+  clearTimeout(window._notifTimer);
+  window._notifTimer = setTimeout(() => banner.classList.add("hidden"), 7000);
+}
+
+// ══════════════════════════════════════════════════════════
+//  JOURNAL
+// ══════════════════════════════════════════════════════════
+async function loadJournal() {
+  const { data } = await sb.from("journal")
+    .select("*")
+    .eq("day_key", todayKey);
+  if (!data) return;
+  data.forEach(function (row) {
+    if (row.user_name === currentUser) renderMyJournalRow(row);
+    else                               renderTheirJournalRow(row);
+  });
+
+  // Load reactions + replies
+  loadReactions();
+  loadReplies();
+}
+
+function subscribeJournal() {
+  sb.channel("journal-" + todayKey)
+    .on("postgres_changes", {
+      event:  "*",
+      schema: "public",
+      table:  "journal",
+      filter: `day_key=eq.${todayKey}`
+    }, function (payload) {
+      if (!payload.new) return;
+      if (payload.new.user_name === currentUser) renderMyJournalRow(payload.new);
+      else                                        renderTheirJournalRow(payload.new);
+    })
+    .on("postgres_changes", {
+      event:  "*",
+      schema: "public",
+      table:  "reactions",
+      filter: `day_key=eq.${todayKey}`
+    }, () => loadReactions())
+    .on("postgres_changes", {
+      event:  "INSERT",
+      schema: "public",
+      table:  "replies",
+      filter: `day_key=eq.${todayKey}`
+    }, () => loadReplies())
+    .subscribe();
+}
+
+function renderMyJournalRow(row) {
+  const ta = document.getElementById("my-journal-text");
+  if (!ta.value) {
+    ta.value = row.entry_text || "";
+    document.getElementById("my-journal-chars").textContent =
+      (row.entry_text || "").length + " / 1000";
+  }
+  document.getElementById("my-journal-saved").classList.remove("hidden");
+}
+
+function renderTheirJournalRow(row) {
   const div      = document.getElementById("their-journal-text");
   const reactBar = document.getElementById("their-journal-react-bar");
   const replyBtn = document.getElementById("toggle-reply-btn");
-
-  if (data.entry && data.entry.text) {
-    div.innerHTML = escHtml(data.entry.text).replace(/\n/g, "<br>");
+  if (row.entry_text) {
+    div.innerHTML = escHtml(row.entry_text).replace(/\n/g, "<br>");
     reactBar.classList.remove("hidden");
     replyBtn.style.display = "inline-block";
-  } else {
-    div.innerHTML = `<p class="placeholder-text">⏳ Waiting for ${otherUser}'s entry...</p>`;
-    reactBar.classList.add("hidden");
-    replyBtn.style.display = "none";
   }
+}
+
+async function loadReactions() {
+  const { data } = await sb.from("reactions")
+    .select("*")
+    .eq("day_key", todayKey)
+    .eq("target_user", currentUser);
+  if (!data || !data.length) return;
+
+  document.getElementById("my-journal-reactions-card").style.display = "block";
+  document.getElementById("my-journal-reactions").innerHTML = data
+    .map(r => `<span class="reaction-chip">${r.emoji} <b>${r.from_user}</b></span>`)
+    .join("");
+}
+
+async function loadReplies() {
+  const { data } = await sb.from("replies")
+    .select("*")
+    .eq("day_key", todayKey)
+    .eq("target_user", currentUser)
+    .order("created_at", { ascending: true });
+  if (!data || !data.length) return;
+
+  document.getElementById("my-journal-reactions-card").style.display = "block";
+  document.getElementById("my-journal-replies").innerHTML = data
+    .map(r => `<div class="reply-item"><div class="reply-author">${escHtml(r.from_user)}</div>${escHtml(r.reply_text)}</div>`)
+    .join("");
 }
 
 async function saveJournal() {
@@ -530,22 +561,29 @@ async function saveJournal() {
   btn.innerHTML = '<span class="spinner"></span> Saving...';
   btn.disabled  = true;
 
-  try {
-    await db.ref(`journal/${todayKey}/${currentUser}/entry`).set({ text, savedAt: Date.now() });
-    document.getElementById("my-journal-saved").classList.remove("hidden");
-    showToast("✍️ Entry saved!");
-  } catch (e) {
-    showToast("❌ Save failed.");
-    console.error(e);
-  } finally {
-    btn.innerHTML = "Save Entry";
-    btn.disabled  = false;
-  }
+  const { error } = await sb.from("journal").upsert({
+    day_key:    todayKey,
+    user_name:  currentUser,
+    entry_text: text,
+    updated_at: new Date().toISOString()
+  }, { onConflict: "day_key,user_name" });
+
+  btn.innerHTML = "Save Entry";
+  btn.disabled  = false;
+
+  if (error) { showToast("❌ Save failed."); console.error(error); return; }
+  document.getElementById("my-journal-saved").classList.remove("hidden");
+  showToast("✍️ Entry saved!");
 }
 
 async function reactToJournal(emoji) {
-  await db.ref(`journal/${todayKey}/${otherUser}/entry/reactions/${currentUser}`).set(emoji);
-  showToast(emoji + " Reaction sent!");
+  const { error } = await sb.from("reactions").upsert({
+    day_key:     todayKey,
+    target_user: otherUser,
+    from_user:   currentUser,
+    emoji
+  }, { onConflict: "day_key,target_user,from_user" });
+  if (!error) showToast(emoji + " Reaction sent!");
 }
 
 let replyOpen = false;
@@ -559,21 +597,34 @@ async function replyToJournal() {
   const input = document.getElementById("their-journal-reply-input");
   const text  = input.value.trim();
   if (!text) return;
-  await db.ref(`journal/${todayKey}/${otherUser}/entry/replies`).push({
-    from: currentUser, text, at: Date.now()
+  const { error } = await sb.from("replies").insert({
+    day_key:     todayKey,
+    target_user: otherUser,
+    from_user:   currentUser,
+    reply_text:  text
   });
-  input.value = "";
-  replyOpen = false;
-  document.getElementById("their-journal-reply-box").classList.add("hidden");
-  showToast("💬 Reply sent!");
+  if (!error) {
+    input.value = "";
+    replyOpen = false;
+    document.getElementById("their-journal-reply-box").classList.add("hidden");
+    showToast("💬 Reply sent!");
+  }
 }
 
 async function favouriteTheirJournal() {
-  const snap  = await db.ref(`journal/${todayKey}/${otherUser}/entry`).once("value");
-  const entry = snap.val();
-  if (!entry) { showToast("No entry to save yet"); return; }
-  await db.ref(`favourites/${currentUser}/entries`).push({
-    from: otherUser, date: todayKey, text: entry.text, savedAt: Date.now()
+  const { data } = await sb.from("journal")
+    .select("entry_text")
+    .eq("day_key", todayKey)
+    .eq("user_name", otherUser)
+    .single();
+  if (!data) { showToast("No entry to save yet"); return; }
+
+  await sb.from("favourites").insert({
+    owner_user: currentUser,
+    kind:       "entry",
+    from_user:  otherUser,
+    day_key:    todayKey,
+    entry_text: data.entry_text
   });
   showToast("⭐ Entry saved to Favourites!");
 }
@@ -585,84 +636,67 @@ async function loadFavourites() {
   const grid = document.getElementById("favourites-grid");
   grid.innerHTML = `<div class="empty-favourites"><span>⏳</span><p>Loading...</p></div>`;
 
-  try {
-    const [apSnap, eSnap] = await Promise.all([
-      db.ref(`favourites/${currentUser}/att_photos`).once("value"),
-      db.ref(`favourites/${currentUser}/entries`).once("value")
-    ]);
+  const { data, error } = await sb.from("favourites")
+    .select("*")
+    .eq("owner_user", currentUser)
+    .order("created_at", { ascending: false });
 
-    const attPhotos = apSnap.val() || {};
-    const entries   = eSnap.val()  || {};
-
-    const items = [
-      ...Object.entries(attPhotos).map(([k,v]) => ({ ...v, kind: "att_photo", key: k })),
-      ...Object.entries(entries).map(([k,v])   => ({ ...v, kind: "entry",    key: k }))
-    ].sort((a, b) => b.savedAt - a.savedAt);
-
-    if (!items.length) {
-      grid.innerHTML = `<div class="empty-favourites"><span>⭐</span><p>Nothing saved yet. Use the ⭐ button on photos or entries.</p></div>`;
-      return;
-    }
-
-    grid.innerHTML = items.map(item => {
-      if (item.kind === "att_photo") {
-        const typeLabel = item.type === "checkin" ? "🟢 Check In" : "🔴 Check Out";
-        const imgUrl = item.url || item.dataUrl || "";
-        return `<div class="fav-card">
-          <img src="${imgUrl}" loading="lazy" />
-          <div class="fav-card-body">
-            <div class="fav-card-author">${AVATARS[item.from]||""} ${escHtml(item.from)} · ${typeLabel}</div>
-            <div class="fav-card-date">${formatDisplayDate(item.date)}</div>
-            ${item.time ? `<div class="fav-card-meta">🕐 ${escHtml(item.time)}</div>` : ""}
-            <a href="${imgUrl}" download="${escHtml(item.from)}-${item.type}-${item.date}.jpg" class="btn-text">⬇ Download</a>
-          </div></div>`;
-      } else {
-        return `<div class="fav-card">
-          <div class="fav-card-body">
-            <div class="fav-card-author">${AVATARS[item.from]||""} ${escHtml(item.from)}</div>
-            <div class="fav-card-date">${formatDisplayDate(item.date)}</div>
-            <div class="fav-card-text">${escHtml(item.text).replace(/\n/g,"<br>")}</div>
-          </div></div>`;
-      }
-    }).join("");
-  } catch (err) {
-    grid.innerHTML = `<div class="empty-favourites"><span>❌</span><p>Error loading.</p></div>`;
-    console.error(err);
+  if (error || !data || !data.length) {
+    grid.innerHTML = `<div class="empty-favourites"><span>⭐</span><p>Nothing saved yet. Use the ⭐ button on photos or entries.</p></div>`;
+    return;
   }
+
+  grid.innerHTML = data.map(function (item) {
+    if (item.kind === "att_photo") {
+      const label = item.att_type === "checkin" ? "🟢 Check In" : "🔴 Check Out";
+      return `<div class="fav-card">
+        <img src="${item.photo_url}" loading="lazy" />
+        <div class="fav-card-body">
+          <div class="fav-card-author">${AVATARS[item.from_user]||""} ${escHtml(item.from_user)} · ${label}</div>
+          <div class="fav-card-date">${formatDisplayDate(item.day_key)}</div>
+          ${item.time_str ? `<div class="fav-card-meta">🕐 ${escHtml(item.time_str)}</div>` : ""}
+          <a href="${item.photo_url}" download="${escHtml(item.from_user)}-${item.att_type}-${item.day_key}.jpg" class="btn-text" target="_blank">⬇ Download</a>
+        </div></div>`;
+    } else {
+      return `<div class="fav-card">
+        <div class="fav-card-body">
+          <div class="fav-card-author">${AVATARS[item.from_user]||""} ${escHtml(item.from_user)}</div>
+          <div class="fav-card-date">${formatDisplayDate(item.day_key)}</div>
+          <div class="fav-card-text">${escHtml(item.entry_text||"").replace(/\n/g,"<br>")}</div>
+        </div></div>`;
+    }
+  }).join("");
 }
 
 // ══════════════════════════════════════════════════════════
 //  AUTO-DELETE at 2AM IST
-//  — Skips anything marked as favourited
 // ══════════════════════════════════════════════════════════
 async function runAutoDelete() {
   const ist = getNowIST();
   if (ist.getHours() !== 2 || ist.getMinutes() > 4) return;
 
-  const prev = new Date(ist.getTime() - 86400000);
+  const prev       = new Date(ist.getTime() - 86400000);
   const expiredKey = prev.toISOString().slice(0, 10);
 
-  const archivedSnap = await db.ref(`attendance/${expiredKey}/_archived`).once("value");
-  if (archivedSnap.val()) return;
+  // Delete attendance photos that were NOT favourited
+  const { data: rows } = await sb.from("attendance")
+    .select("id, user_name, type, photo_url, favourited")
+    .eq("day_key", expiredKey);
 
-  const snap = await db.ref(`attendance/${expiredKey}`).once("value");
-  if (!snap.exists()) {
-    await db.ref(`attendance/${expiredKey}/_archived`).set(true);
-    return;
-  }
+  if (!rows) return;
 
-  const data = snap.val();
-  for (const user of ["Chitti", "Pathak"]) {
-    for (const type of ["checkin", "checkout"]) {
-      const entry = (data[user] || {})[type];
-      if (entry && entry.dataUrl && !entry.favourited) {
-        // Remove only the heavy dataUrl, keep metadata
-        await db.ref(`attendance/${expiredKey}/${user}/${type}/dataUrl`).remove();
-      }
+  for (const row of rows) {
+    if (row.type !== "home" && !row.favourited && row.photo_url) {
+      // Delete from Storage
+      const path = row.photo_url.split("/attendance-photos/")[1];
+      if (path) await sb.storage.from("attendance-photos").remove([path]);
+      // Null out the URL in DB
+      await sb.from("attendance").update({ photo_url: null }).eq("id", row.id);
     }
   }
 
-  await db.ref(`attendance/${expiredKey}/_archived`).set(true);
+  // Delete old journal entries not saved to favourites
+  // (keep the text rows lightweight — they're tiny)
 }
 
 // ── UTILITIES ─────────────────────────────────────────────
@@ -677,6 +711,6 @@ function showToast(msg) {
 
 function escHtml(str) {
   return String(str)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
