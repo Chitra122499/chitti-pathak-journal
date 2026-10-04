@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chitti & Pathak Journal</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/exifr/dist/lite.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- OneSignal SDK -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+</head>
+<body>
+
+  <!-- ── LOGIN SCREEN ── -->
+  <div id="login-screen" class="screen active">
+    <div class="login-card">
+      <div class="login-logo">📔</div>
+      <h1>Our Journal</h1>
+      <p class="login-subtitle">Chitti &amp; Pathak</p>
+      <div class="login-form">
+        <label>Who are you?</label>
+        <div class="user-select">
+          <button class="user-btn" data-user="Chitti" onclick="selectUser('Chitti')">
+            <span class="avatar">🌸</span>
+            <span>Chitti</span>
+          </button>
+          <button class="user-btn" data-user="Pathak" onclick="selectUser('Pathak')">
+            <span class="avatar">🌿</span>
+            <span>Pathak</span>
+          </button>
+        </div>
+        <input type="password" id="pin-input" placeholder="Enter your PIN" maxlength="6" />
+        <button class="btn-primary" onclick="login()">Enter Journal</button>
+        <p id="login-error" class="error-msg"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MAIN APP ── -->
+  <div id="app-screen" class="screen">
+
+    <!-- Header -->
+    <header>
+      <div class="header-left">
+        <span class="header-logo">📔</span>
+        <div>
+          <span class="header-title">Our Journal</span>
+          <span id="header-date" class="header-date"></span>
+        </div>
+      </div>
+      <div class="header-right">
+        <span id="header-user" class="header-user"></span>
+        <button class="btn-icon" onclick="logout()" title="Logout">⎋</button>
+      </div>
+    </header>
+
+    <!-- Notification banner -->
+    <div id="notif-banner" class="notif-banner hidden"></div>
+
+    <!-- Tab Bar -->
+    <nav class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('attendance')" id="tab-attendance">
+        🏢 Attendance
+      </button>
+      <button class="tab-btn" onclick="switchTab('journal')" id="tab-journal">
+        ✍️ My Day
+      </button>
+      <button class="tab-btn" onclick="switchTab('favourites')" id="tab-favourites">
+        ❤️ Favourites
+      </button>
+    </nav>
+
+    <!-- ── TAB: ATTENDANCE ── -->
+    <div id="tab-content-attendance" class="tab-content active">
+      <div class="att-date-strip" id="att-date-strip"></div>
+
+      <div class="att-grid">
+
+        <!-- ── MY COLUMN ── -->
+        <div class="att-col">
+          <div class="att-col-header" id="my-att-header"></div>
+
+          <!-- CHECK IN -->
+          <div class="att-step-card" id="my-checkin-card">
+            <div class="att-step-indicator checkin-color">
+              <span class="step-dot">🟢</span>
+              <div>
+                <div class="step-title">Check In</div>
+                <div class="step-hint">Take a photo when you arrive</div>
+              </div>
+            </div>
+
+            <!-- Before capture -->
+            <div id="my-checkin-idle">
+              <button class="att-action-btn checkin-btn" onclick="startCapture('checkin')">
+                📸 Check In
+              </button>
+            </div>
+
+            <!-- Preview (after photo chosen, before save) -->
+            <div id="my-checkin-preview-wrap" class="hidden">
+              <div class="att-photo-wrap">
+                <img id="my-checkin-img" src="" alt="Check in photo" />
+                <div class="att-photo-overlay">
+                  <span id="my-checkin-preview-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-preview-actions">
+                <button class="btn-secondary btn-sm" onclick="startCapture('checkin')">Retake</button>
+                <button class="btn-primary btn-sm checkin-btn" onclick="confirmAttendance('checkin')">
+                  ✅ Confirm Check In
+                </button>
+              </div>
+            </div>
+
+            <!-- Saved state -->
+            <div id="my-checkin-done" class="att-done-state hidden">
+              <div class="att-photo-wrap">
+                <img id="my-checkin-done-img" src="" alt="Check in" />
+                <div class="att-photo-overlay">
+                  <span id="my-checkin-done-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-done-footer">
+                <span class="att-done-badge checkin-badge">✅ Checked In</span>
+                <div class="att-done-actions">
+                  <button class="att-retake-btn" onclick="retakePhoto('checkin')" title="Replace photo">🔄 Retake</button>
+                  <button class="fav-btn" onclick="favAttendancePhoto('checkin','my')" title="Save to favourites" id="my-checkin-fav-btn">⭐</button>
+                </div>
+              </div>
+            </div>
+
+            <input type="file" id="my-checkin-input" accept="image/*" capture="user" style="display:none" onchange="handleAttCapture(event,'checkin')" />
+          </div>
+
+          <!-- CHECK OUT -->
+          <div class="att-step-card" id="my-checkout-card">
+            <div class="att-step-indicator checkout-color">
+              <span class="step-dot">🔴</span>
+              <div>
+                <div class="step-title">Check Out</div>
+                <div class="step-hint">Take a photo when you leave</div>
+              </div>
+            </div>
+
+            <div id="my-checkout-idle">
+              <button class="att-action-btn checkout-btn" onclick="startCapture('checkout')">
+                📸 Check Out
+              </button>
+            </div>
+
+            <div id="my-checkout-preview-wrap" class="hidden">
+              <div class="att-photo-wrap">
+                <img id="my-checkout-img" src="" alt="Check out photo" />
+                <div class="att-photo-overlay">
+                  <span id="my-checkout-preview-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-preview-actions">
+                <button class="btn-secondary btn-sm" onclick="startCapture('checkout')">Retake</button>
+                <button class="btn-primary btn-sm checkout-btn" onclick="confirmAttendance('checkout')">
+                  ✅ Confirm Check Out
+                </button>
+              </div>
+            </div>
+
+            <div id="my-checkout-done" class="att-done-state hidden">
+              <div class="att-photo-wrap">
+                <img id="my-checkout-done-img" src="" alt="Check out" />
+                <div class="att-photo-overlay">
+                  <span id="my-checkout-done-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-done-footer">
+                <span class="att-done-badge checkout-badge">✅ Checked Out</span>
+                <div class="att-done-actions">
+                  <button class="att-retake-btn checkout-retake" onclick="retakePhoto('checkout')" title="Replace photo">🔄 Retake</button>
+                  <button class="fav-btn" onclick="favAttendancePhoto('checkout','my')" title="Save to favourites" id="my-checkout-fav-btn">⭐</button>
+                </div>
+              </div>
+            </div>
+
+            <input type="file" id="my-checkout-input" accept="image/*" capture="user" style="display:none" onchange="handleAttCapture(event,'checkout')" />
+          </div>
+
+          <!-- REACHED HOME -->
+          <div class="att-step-card" id="my-home-card">
+            <div class="att-step-indicator home-color">
+              <span class="step-dot">🏠</span>
+              <div>
+                <div class="step-title">Reached Home</div>
+                <div class="step-hint">Let them know you're safe</div>
+              </div>
+            </div>
+            <div id="my-home-idle">
+              <button class="att-action-btn home-btn" onclick="markReachedHome()">
+                🏠 I'm Home!
+              </button>
+            </div>
+            <div id="my-home-done" class="att-done-state hidden">
+              <div class="att-done-badge home-badge">🏠 Reached Home Safely</div>
+              <div id="my-home-done-time" class="att-home-time"></div>
+            </div>
+          </div>
+
+          <!-- DURATION -->
+          <div class="att-duration-card hidden" id="my-duration-card">
+            <span class="duration-icon">⏱</span>
+            <div>
+              <div class="duration-label">Time at Office</div>
+              <div class="duration-value" id="my-duration-value">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── THEIR COLUMN ── -->
+        <div class="att-col">
+          <div class="att-col-header" id="their-att-header"></div>
+
+          <!-- THEIR CHECK IN -->
+          <div class="att-step-card">
+            <div class="att-step-indicator checkin-color">
+              <span class="step-dot">🟢</span>
+              <div>
+                <div class="step-title">Check In</div>
+                <div class="step-hint" id="their-checkin-hint">Waiting...</div>
+              </div>
+            </div>
+            <div id="their-checkin-empty" class="att-waiting">
+              <span class="waiting-icon">⏳</span>
+              <span id="their-checkin-empty-text">Not checked in yet</span>
+            </div>
+            <div id="their-checkin-done" class="att-done-state hidden">
+              <div class="att-photo-wrap">
+                <img id="their-checkin-done-img" src="" alt="Their check in" />
+                <div class="att-photo-overlay">
+                  <span id="their-checkin-done-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-done-footer">
+                <span class="att-done-badge checkin-badge">✅ Checked In</span>
+                <button class="fav-btn" onclick="favAttendancePhoto('checkin','their')" title="Save to favourites" id="their-checkin-fav-btn">⭐</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- THEIR CHECK OUT -->
+          <div class="att-step-card">
+            <div class="att-step-indicator checkout-color">
+              <span class="step-dot">🔴</span>
+              <div>
+                <div class="step-title">Check Out</div>
+                <div class="step-hint" id="their-checkout-hint">Waiting...</div>
+              </div>
+            </div>
+            <div id="their-checkout-empty" class="att-waiting">
+              <span class="waiting-icon">⏳</span>
+              <span>Not checked out yet</span>
+            </div>
+            <div id="their-checkout-done" class="att-done-state hidden">
+              <div class="att-photo-wrap">
+                <img id="their-checkout-done-img" src="" alt="Their check out" />
+                <div class="att-photo-overlay">
+                  <span id="their-checkout-done-time" class="att-overlay-time"></span>
+                </div>
+              </div>
+              <div class="att-done-footer">
+                <span class="att-done-badge checkout-badge">✅ Checked Out</span>
+                <button class="fav-btn" onclick="favAttendancePhoto('checkout','their')" title="Save to favourites" id="their-checkout-fav-btn">⭐</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- THEIR REACHED HOME -->
+          <div class="att-step-card">
+            <div class="att-step-indicator home-color">
+              <span class="step-dot">🏠</span>
+              <div>
+                <div class="step-title">Reached Home</div>
+                <div class="step-hint" id="their-home-hint">Waiting...</div>
+              </div>
+            </div>
+            <div id="their-home-empty" class="att-waiting">
+              <span class="waiting-icon">⏳</span>
+              <span>Not home yet</span>
+            </div>
+            <div id="their-home-done" class="att-done-state hidden">
+              <div class="att-done-badge home-badge">🏠 Reached Home Safely</div>
+              <div id="their-home-done-time" class="att-home-time"></div>
+            </div>
+          </div>
+
+          <!-- THEIR DURATION -->
+          <div class="att-duration-card hidden" id="their-duration-card">
+            <span class="duration-icon">⏱</span>
+            <div>
+              <div class="duration-label">Time at Office</div>
+              <div class="duration-value" id="their-duration-value">—</div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- end att-grid -->
+    </div><!-- end attendance tab -->
+
+    <!-- ── TAB: MY DAY JOURNAL ── -->
+    <div id="tab-content-journal" class="tab-content journal-tab-content">
+
+      <!-- Book wrapper -->
+      <div class="book-wrap">
+        <div class="book">
+
+          <!-- LEFT PAGE — My entry -->
+          <div class="book-page book-page-left">
+            <div class="page-header">
+              <div class="page-author">
+                <span id="my-journal-avatar" class="page-avatar"></span>
+                <span id="my-journal-name" class="page-author-name"></span>
+                <span class="page-you-badge">You</span>
+              </div>
+              <div class="page-date" id="book-date-left"></div>
+            </div>
+
+            <div class="page-divider"></div>
+
+            <div class="page-body">
+              <textarea
+                id="my-journal-text"
+                class="book-textarea"
+                placeholder="Dear diary, today was..."></textarea>
+            </div>
+
+            <div class="page-footer">
+              <span id="my-journal-chars" class="book-char-count">0 / 1000</span>
+              <div class="page-footer-right">
+                <span id="my-journal-saved" class="book-saved hidden">✅ Saved</span>
+                <button class="book-save-btn" onclick="saveJournal()" id="save-journal-btn">Save ✦</button>
+              </div>
+            </div>
+
+            <!-- Reactions received -->
+            <div id="my-journal-reactions-card" class="book-reactions hidden">
+              <div id="my-journal-reactions" class="reactions-display"></div>
+              <div id="my-journal-replies" class="replies-display"></div>
+            </div>
+
+            <div class="page-number">1</div>
+          </div>
+
+          <!-- SPINE -->
+          <div class="book-spine"></div>
+
+          <!-- RIGHT PAGE — Their entry -->
+          <div class="book-page book-page-right">
+            <div class="page-header">
+              <div class="page-author">
+                <span id="their-journal-avatar" class="page-avatar"></span>
+                <span id="their-journal-name" class="page-author-name"></span>
+              </div>
+              <div class="page-date" id="book-date-right"></div>
+            </div>
+
+            <div class="page-divider"></div>
+
+            <div class="page-body">
+              <div id="their-journal-text" class="book-readonly">
+                <span class="book-placeholder">✦ Waiting for their words...</span>
+              </div>
+            </div>
+
+            <div class="page-footer" id="their-journal-footer" style="display:none">
+              <div class="react-row">
+                <button class="book-react-btn" onclick="reactToJournal('❤️')">❤️</button>
+                <button class="book-react-btn" onclick="reactToJournal('😊')">😊</button>
+                <button class="book-react-btn" onclick="reactToJournal('🤗')">🤗</button>
+                <button class="book-react-btn" onclick="reactToJournal('💙')">💙</button>
+                <button class="book-fav-btn" onclick="favouriteTheirJournal()" title="Save">⭐</button>
+                <button class="book-reply-toggle" id="toggle-reply-btn" onclick="toggleReplyBox()">✦ Reply</button>
+              </div>
+              <div id="their-journal-reply-box" class="book-reply-box hidden">
+                <input type="text" id="their-journal-reply-input" placeholder="Write a reply..." maxlength="200" />
+                <button class="book-save-btn" onclick="replyToJournal()">Send</button>
+              </div>
+            </div>
+
+            <div class="page-number">2</div>
+          </div>
+
+        </div><!-- end book -->
+      </div><!-- end book-wrap -->
+
+    </div>
+
+    <!-- ── TAB: FAVOURITES ── -->
+    <div id="tab-content-favourites" class="tab-content">
+      <div class="favourites-header">
+        <h2>❤️ Saved Favourites</h2>
+        <p>Photos and entries you've starred — kept forever</p>
+      </div>
+      <div id="favourites-grid" class="favourites-grid">
+        <div class="empty-favourites">
+          <span>⭐</span>
+          <p>Nothing saved yet. Use the ⭐ button on photos or entries.</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end app-screen -->
+
+  <script src="supabase-config.js"></script>
+  <script src="app.js"></script>
+
+  <!-- ── CAMERA MODAL ── -->
+  <div id="camera-modal" class="camera-modal hidden">
+    <div class="camera-modal-inner">
+      <div class="camera-modal-header">
+        <span id="camera-modal-title">Take Photo</span>
+        <button class="camera-close-btn" onclick="closeCamera()">✕</button>
+      </div>
+      <div class="camera-viewfinder">
+        <video id="camera-video" autoplay playsinline muted></video>
+        <canvas id="camera-canvas" style="display:none"></canvas>
+        <div class="camera-overlay-ring"></div>
+      </div>
+      <div class="camera-controls">
+        <button class="camera-flip-btn" onclick="flipCamera()" title="Flip camera">🔄</button>
+        <button class="camera-capture-btn" onclick="capturePhoto()">
+          <span class="capture-ring"></span>
+        </button>
+        <button class="camera-upload-btn" onclick="triggerFileUpload()" title="Upload from gallery">🖼</button>
+      </div>
+      <p class="camera-hint">Tap the button to take a photo, or 🖼 to upload from your device</p>
+    </div>
+  </div>
+</body>
+</html>
