@@ -267,6 +267,36 @@ function switchTab(name) {
   if (name === "favourites") loadFavourites();
 }
 
+// ── LOCATION ──────────────────────────────────────────────
+function getLocation() {
+  return new Promise(function (resolve) {
+    if (!navigator.geolocation) { resolve(""); return; }
+    navigator.geolocation.getCurrentPosition(
+      async function (pos) {
+        const loc = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+        resolve(loc);
+      },
+      function () { resolve(""); },
+      { timeout: 8000, maximumAge: 60000 }
+    );
+  });
+}
+
+async function reverseGeocode(lat, lon) {
+  try {
+    const res  = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, {
+      headers: { "Accept-Language": "en" }
+    });
+    const data = await res.json();
+    const addr = data.address || {};
+    const city    = addr.city || addr.town || addr.village || addr.county || "";
+    const country = addr.country || "";
+    return [city, country].filter(Boolean).join(", ");
+  } catch {
+    return "";
+  }
+}
+
 // ── IMAGE COMPRESSION ─────────────────────────────────────
 function compressImage(dataUrl, maxWidth, quality) {
   return new Promise(function (resolve) {
@@ -391,7 +421,7 @@ async function handleAttCapture(event, type) {
 
 async function processCapturedPhoto(dataUrl, timeStr, type) {
   const compressed = await compressImage(dataUrl);
-  pending[type] = { dataUrl: compressed, time: timeStr, timestamp: Date.now() };
+  pending[type] = { dataUrl: compressed, time: timeStr, timestamp: Date.now(), location: "" };
 
   document.getElementById("my-" + type + "-idle").classList.add("hidden");
   document.getElementById("my-" + type + "-done").classList.add("hidden");
@@ -399,6 +429,14 @@ async function processCapturedPhoto(dataUrl, timeStr, type) {
   wrap.classList.remove("hidden");
   document.getElementById("my-" + type + "-img").src = compressed;
   document.getElementById("my-" + type + "-preview-time").textContent = timeStr;
+
+  // Get location in background — show "📍 Getting location..." on preview
+  const locEl = document.getElementById("my-" + type + "-preview-time");
+  locEl.textContent = timeStr + " · 📍 Getting location...";
+  getLocation().then(function (loc) {
+    if (pending[type]) pending[type].location = loc;
+    locEl.textContent = timeStr + (loc ? " · 📍 " + loc : "");
+  });
 }
 
 async function confirmAttendance(type) {
@@ -429,6 +467,7 @@ async function confirmAttendance(type) {
       type,
       photo_url: photoUrl,
       time_str:  pending[type].time,
+      location:  pending[type].location || "",
       ts:        pending[type].timestamp
     }, { onConflict: "day_key,user_name,type" });
     if (dbError) throw dbError;
@@ -436,8 +475,8 @@ async function confirmAttendance(type) {
     // 4. Notify other person
     await sendNotification(
       type === "checkin"
-        ? `${AVATARS[currentUser]} ${currentUser} checked in at ${pending[type].time}`
-        : `${AVATARS[currentUser]} ${currentUser} checked out at ${pending[type].time}`
+        ? `${AVATARS[currentUser]} ${currentUser} checked in at ${pending[type].time}${pending[type].location ? " · 📍 " + pending[type].location : ""}`
+        : `${AVATARS[currentUser]} ${currentUser} checked out at ${pending[type].time}${pending[type].location ? " · 📍 " + pending[type].location : ""}`
     );
 
     // Push notification to other person's phone
@@ -446,8 +485,8 @@ async function confirmAttendance(type) {
         ? `${AVATARS[currentUser]} ${currentUser} has arrived at office`
         : `${AVATARS[currentUser]} ${currentUser} has left office`,
       type === "checkin"
-        ? `Checked in at ${pending[type].time} 🟢`
-        : `Checked out at ${pending[type].time} 🔴`
+        ? `Checked in at ${pending[type].time}${pending[type].location ? "\n📍 " + pending[type].location : ""} 🟢`
+        : `Checked out at ${pending[type].time}${pending[type].location ? "\n📍 " + pending[type].location : ""} 🔴`
     );
 
     showMyAttDone(type, pending[type].dataUrl, pending[type].time);
@@ -461,13 +500,14 @@ async function confirmAttendance(type) {
   }
 }
 
-function showMyAttDone(type, imgSrc, time) {
+function showMyAttDone(type, imgSrc, time, location) {
   document.getElementById("my-" + type + "-idle").classList.add("hidden");
   document.getElementById("my-" + type + "-preview-wrap").classList.add("hidden");
   const done = document.getElementById("my-" + type + "-done");
   done.classList.remove("hidden");
   document.getElementById("my-" + type + "-done-img").src = imgSrc;
-  document.getElementById("my-" + type + "-done-time").textContent = time;
+  const timeEl = document.getElementById("my-" + type + "-done-time");
+  timeEl.textContent = time + (location ? " · 📍 " + location : "");
 }
 
 function retakePhoto(type) {
@@ -551,7 +591,7 @@ function renderMyAttRow(row) {
   attState.my[row.type] = row;
   if (row.type === "checkin" || row.type === "checkout") {
     if (!pending[row.type]) {
-      showMyAttDone(row.type, row.photo_url, row.time_str);
+      showMyAttDone(row.type, row.photo_url, row.time_str, row.location);
     }
   }
   if (row.type === "home") {
@@ -568,14 +608,14 @@ function renderTheirAttRow(row) {
     document.getElementById("their-checkin-empty").classList.add("hidden");
     document.getElementById("their-checkin-done").classList.remove("hidden");
     document.getElementById("their-checkin-done-img").src = row.photo_url;
-    document.getElementById("their-checkin-done-time").textContent = row.time_str;
+    document.getElementById("their-checkin-done-time").textContent = row.time_str + (row.location ? " · 📍 " + row.location : "");
     document.getElementById("their-checkin-hint").textContent = "Arrived at office";
   }
   if (row.type === "checkout") {
     document.getElementById("their-checkout-empty").classList.add("hidden");
     document.getElementById("their-checkout-done").classList.remove("hidden");
     document.getElementById("their-checkout-done-img").src = row.photo_url;
-    document.getElementById("their-checkout-done-time").textContent = row.time_str;
+    document.getElementById("their-checkout-done-time").textContent = row.time_str + (row.location ? " · 📍 " + row.location : "");
     document.getElementById("their-checkout-hint").textContent = "Left office";
   }
   if (row.type === "home") {
